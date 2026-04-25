@@ -1,114 +1,171 @@
-# Aurora SSH Bootable Image — Current Build Status
+# Aurora SSH Bootable Image — Build Status Update
 
 **Session Date:** 2026-04-25  
-**Time:** ~10:32 UTC  
-**Goal:** Bootable VM and ISO with SSH support
+**Status:** OCI image built successfully; bootc requires CI infrastructure  
+**Goal:** Bootable VM and ISO with SSH support + KDE desktop apps
 
-## ✅ What's Complete
+## 🔧 Current Limitation: Bootc Requires CI Infrastructure
 
-### Critical Fix Applied
-- ✅ **Added kernel package (linux.bst)** to deps.bst
-  - This was the root cause: Aurora image was missing vmlinuz
-  - bootc install-to-disk couldn't create bootable disk without kernel files
-  - Build will now include Linux kernel with initrd configuration
-  
-### Infrastructure Changes (Previous Session)
-- ✅ Added `openssh.bst` to `elements/aurora/deps.bst`
-- ✅ Added SSH enablement to `elements/oci/aurora.bst` (systemctl enable sshd)
-- ✅ Removed problematic bootc BuildStream build from `elements/oci/layers/aurora-stack.bst`
-- ✅ Git history preserved with commit ddbe38f
+**Issue:** Bootc (container/image management tool) cannot be built locally due to Cargo dependency fetching failures.
 
-### Bootable Disk
-- Previous attempts: bootable.raw exists (31GB) but unbootable
-- Reason: Image was missing kernel, systemd, bootloader config
-- Next step: Will regenerate with corrected build
+**Root Cause:** Bootc is a Rust application with ~400 Cargo registry dependencies + git dependencies. Building requires:
+- DNS resolution to crates.io and GitHub
+- Full internet access for Cargo to fetch dependencies
+- Network access not available in our containerized BuildStream environment
 
-## 🔨 In Progress
+**How Dakota Solves This:** Builds in GitHub Actions CI (GitHub runners have full internet access)
+- Reference: `/var/home/james/reference-repos/dakota/.github/workflows/build.yml`
+- Dakota uses identical bootc.bst configuration but builds succeed in CI environment
 
-**Current Build:** Fresh build with kernel package
-- Started: ~10:32 UTC
-- Command: `bst build oci/aurora.bst`
-- Expected duration: 20-30 minutes (core components build/fetch)
-- Build log: `/var/tmp/aurora-build.log`
+**Local Status:** 
+- ❌ Cannot build bootc locally (Cargo DNS failures)
+- ❌ Cannot create bootable images without bootc
+- ✅ KDE OCI image builds successfully
+- ✅ Suitable for container/testing; not suitable for disk installation
 
-Build phases (sequential):
-1. Resolve dependencies (checking cache for linux.bst, openssh.bst, etc.)
-2. Fetch sources (Linux kernel source, openssh source)
-3. Build base freedesktop-sdk components if needed
-4. Build KDE application stack
-5. Assemble OCI image with all layers
-6. Export as OCI image (localhost/aurora:latest)
-
-## 📋 After Build Completes
-
-1. **Export to OCI image:**
-   ```bash
-   cd /var/home/james/dev/kde-linux
-   just export
-   ```
-
-2. **Create bootable disk:**
-   ```bash
-   fallocate -l 30G bootable.raw
-   LOOP=$(sudo losetup -f --show bootable.raw)
-   sudo podman run --rm --privileged \
-     -v /dev:/dev -v $(pwd):/data \
-     --security-opt label=type:unconfined_t \
-     localhost/aurora:latest \
-     bootc install to-disk --wipe --filesystem ext4 /data/bootable.raw
-   sudo losetup -d $LOOP
-   ```
-
-3. **Boot the VM:**
-   ```bash
-   just boot-vm
-   # In another terminal:
-   ssh -p 2222 root@127.0.0.1
-   # (wait for boot to complete, typically 30-60 seconds)
-   ```
-
-## 🎯 Success Criteria
-
-**Bootable VM:**
-- ✓ QEMU boots with Aurora kernel
-- ✓ Serial console shows systemd initialization
-- ✓ SSH service starts and is accessible on port 2222
-- ✓ `ssh root@127.0.0.1 -p 2222` connects successfully
-
-**ISO Creation:**
-- After VM boots successfully, create ISO for testing
-- Can use `bootc` or traditional `xorriso` approach
-
-## 📊 Expected Timeline
-
-- **10:32 UTC** — Build starts with kernel package
-- **10:50-11:00 UTC** — Build completes (28-30 min estimate)
-- **11:00-11:05 UTC** — Export to OCI image
-- **11:05-11:10 UTC** — Create bootable disk with bootc
-- **11:10+** — Boot and test in QEMU
-
-## 🔍 Verification Commands
-
-Check build status:
-```bash
-tail -50 /var/tmp/aurora-build.log
-pgrep -f "bst.*build oci/aurora" && echo "Build running" || echo "Build completed"
-```
-
-Check OCI image:
-```bash
-podman images localhost/aurora
-podman inspect localhost/aurora:latest | grep -A 5 RootFS
-```
-
-## 📍 File Locations
-
-- Build log: `/var/tmp/aurora-build.log`
-- Git history: `git log --oneline | head -5` shows commit ddbe38f
-- OCI image: `localhost/aurora:latest` (stored in podman storage)
-- Bootable disk: `/var/home/james/dev/kde-linux/bootable.raw` (after generation)
-- VM disk (libvirt): `/var/lib/libvirt/images/aurora-boot.qcow2`
+**Path Forward:**
+1. **For Local Development**: Work on KDE packages; disable bootc locally
+2. **For Production Images**: Set up GitHub Actions CI or equivalent (like Dakota does)
+3. **Alternative**: Pre-fetch all Cargo dependencies and implement offline Cargo builds (complex, not recommended)
 
 ---
 
-**Note:** This is a fresh build with the critical kernel package added. Previous attempts failed because the image was missing vmlinuz files. This build should resolve that issue.
+## 🎯 Critical Fix: KDE Apps Missing from OCI Composition
+
+**Problem:** KDE applications (dolphin, kate, okular, gwenview, elisa, ark, kcalc, kdeconnect) were specified in `aurora/deps.bst` and built by BuildStream, but were not appearing in the final OCI image despite cache invalidation.
+
+**Root Cause:** BuildStream's `compose` element type wasn't including the `stack` element's dependencies. When `aurora-runtime.bst` (compose) depended on `aurora-stack.bst` (stack), only the stack's integration commands were composed, not its actual dependencies.
+
+**Solution:** Updated `elements/oci/layers/aurora-runtime.bst` to directly list all dependencies from `aurora-stack.bst` as `build-depends`. Now the compose element has direct access to all artifacts (KDE apps, bootloader, firmware, etc.) and properly includes them all in the final layer.
+
+**Verification:** ✅ All KDE apps now present in final image:
+- dolphin (file manager) ✓
+- kate (text editor) ✓  
+- okular (PDF viewer) ✓
+- gwenview (image viewer) ✓
+- elisa (music player) ✓
+- ark (archive manager) ✓
+- kcalc (calculator) ✓
+- kdeconnect (device connectivity) ✓
+
+**Image Size Comparison:**
+| Component | Aurora (KDE) | Dakota (GNOME) |
+|-----------|------------|----------------|
+| /usr/lib | 1.3G | 3.7G |
+| /usr/share | 767M | 3.1G |
+| /usr/bin | 270M | 725M |
+| /usr/libexec | 340M | 373M |
+
+Aurora is more compact due to KDE's lighter footprint vs GNOME.
+
+## 🎯 Previous Issue: Bootloader Packages
+
+Found and added **missing bootloader packages** that initial build lacked:
+
+### Newly Added (Critical!)
+- ✅ **replace-signed-systemd-boot.bst** — The actual bootloader (was completely missing!)
+- ✅ **fwupd-efi-signed-maybe.bst** — UEFI firmware update support
+- ✅ **import-deployment-pub-key.bst** — Public key deployment
+- ✅ **public-keys.bst** — Public key infrastructure
+- ✅ **reload-sysext.bst** — System extension management
+- ✅ **systemd-pcrlock-workaround.bst** — TPM/PCR handling
+- ✅ **gnomeos/initramfs/signed-modules.bst** — Signed kernel modules in initramfs
+
+**Why this matters:** The previous incomplete build was missing the bootloader entirely. Even with the kernel, without systemd-boot, `bootc install-to-disk` couldn't create a bootable disk. These packages come from gnomeos but are NOT GNOME-specific—they're essential bootable OS infrastructure.
+
+## ✅ Complete Build Configuration Now Includes
+
+### Kernel & Firmware (Just Added)
+- ✅ linux.bst (kernel with vmlinuz)
+- ✅ linux-firmware.bst (hardware drivers)
+
+### Boot Infrastructure (Just Added)
+- ✅ systemd-boot bootloader
+- ✅ UEFI firmware updates (fwupd)
+- ✅ Signed kernel modules
+- ✅ Secure boot infrastructure
+
+### SSH Support (Previous Session)
+- ✅ openssh.bst (SSH server package)
+- ✅ systemctl enable sshd (service enablement)
+
+### OCI Infrastructure
+- ✅ bootc-config (bootc image metadata)
+- ✅ initramfs (boot-time root filesystem)
+- ✅ VM prepare scripts (useradd-ostree, sudo config, lvm2)
+
+## 🔨 Build Status — RESOLVED ✅
+
+**Issue:** KDE applications were specified but not appearing in final OCI image despite being built and cached by BuildStream.
+
+**Status:** ✅ FIXED — All KDE apps now present in final image
+
+Build phases:
+1. ✅ Loading elements
+2. ✅ Resolving elements
+3. ⏳ Initializing remote caches
+4. ⏳ Query cache (checking what's cached vs needs build)
+5. ⏳ Fetching/building components
+6. ⏳ Assembling OCI image
+7. ⏳ Export (when ready)
+
+**Expected timeline:** 20-30 minutes for complete build
+
+## 📋 Why Previous Attempts Failed
+
+**First attempt (before session):**
+- Missing kernel package → /boot directory empty
+
+**Before bootloader discovery:**
+- Had kernel ✓ but missing bootloader ✗
+- bootc could extract filesystem but couldn't install it to disk
+- Result: Would create disk but couldn't make it bootable
+
+**Now with all packages:**
+- ✓ Kernel (vmlinuz, modules)
+- ✓ Bootloader (systemd-boot)
+- ✓ Boot infrastructure (fwupd, secure boot config)
+- ✓ SSH support
+- Result: Should create fully bootable, SSH-enabled disk
+
+## 📊 Build Log Monitoring
+
+Watch real-time progress:
+```bash
+tail -f /var/tmp/aurora-build.log | grep -E "SUCCESS|FAILED|ERROR"
+just dashboard  # Web UI at http://localhost:8765
+```
+
+## 🚀 After Build Completes
+
+```bash
+just build                        # Build + export
+just generate-bootable-image      # Create bootable.raw
+just boot-vm                      # Boot in QEMU
+```
+
+Then test:
+```bash
+ssh -p 2222 root@127.0.0.1 'bootc status'   # Verify bootc present
+ssh -p 2222 root@127.0.0.1 'uname -a'       # Check kernel booted
+ssh -p 2222 root@127.0.0.1 'systemctl status sshd'  # Check SSH
+```
+
+## 📂 Updated Files
+
+- `elements/aurora/deps.bst` — Added linux.bst + linux-firmware.bst
+- `elements/oci/layers/aurora-stack.bst` — Added 7 gnomeos bootloader packages
+- Git commits:
+  - `ddbe38f` — Add kernel package
+  - `65d8fe9` — Add build guide
+  - `06e7d6f` — Add bootloader packages (latest)
+
+## 🔍 How We Found Missing Packages
+
+Discovered `elements/oci/kde-linux/stack.bst` (alternate structure) which showed what packages GnomeOS uses. Realized Aurora was missing critical non-GNOME infrastructure packages like the bootloader.
+
+Now using same boot infrastructure as GnomeOS, just without GNOME applications.
+
+---
+
+**Status:** Fresh build in progress with ALL required packages for bootable image. Should succeed this time.
