@@ -63,6 +63,7 @@ bst-nspawn *ARGS:
 
     # Run systemd-nspawn container
     echo "==> Running bst in systemd-nspawn..." | tee -a "$LOG"
+    set +e
     sudo systemd-nspawn \
         --directory="$ROOTFS" \
         --bind="{{justfile_directory()}}:/src" \
@@ -70,7 +71,13 @@ bst-nspawn *ARGS:
         --bind-ro="${HOME}/.cargo:/root/.cargo" \
         --chdir=/src \
         --capability=all \
-        /bin/bash -c 'cd /src && bst --colors "$@"' -- ${BST_FLAGS:-} {{ARGS}} 2>&1 | tee -a "$LOG"
+        /bin/bash -c 'cd /src && bst --colors {{ARGS}}' >> "$LOG" 2>&1
+    BST_EXIT=$?
+    set -e
+
+    # Also display to console
+    tail -50 "$LOG" | grep -A 999999 "Running bst in systemd-nspawn" || true
+    exit $BST_EXIT
 
 # ── Build log ─────────────────────────────────────────────────────────
 # Run build in background, log to /var/tmp/aurora-build.log, tail it

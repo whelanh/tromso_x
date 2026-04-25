@@ -79,13 +79,6 @@ sources:
     name: base64
     version: 0.21.7
     sha: 9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567
-  - kind: git
-    commit: 33b4bccc89596fb7b95e3975388f13d0828b1960
-    repo: github:bootc-dev/bcvk.git
-    query:
-      rev: 33b4bccc89596fb7b95e3975388f13d0828b1960
-    name: bcvk-qemu
-    version: 0.1.0
   - kind: registry
     name: bitflags
     version: 1.3.2
