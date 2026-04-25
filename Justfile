@@ -69,7 +69,6 @@ bst-nspawn *ARGS:
         --bind="${HOME}/.cache/buildstream:/root/.cache/buildstream" \
         --bind-ro="${HOME}/.cargo:/root/.cargo" \
         --chdir=/src \
-        --network=host \
         --capability=all \
         /bin/bash -c 'cd /src && bst --colors "$@"' -- ${BST_FLAGS:-} {{ARGS}} 2>&1 | tee -a "$LOG"
 
