@@ -4,7 +4,7 @@ sources:
 - kind: git_repo
   url: github:bootc-dev/bootc.git
   track: v*
-  ref: v1.15.1-0-gbd93a1e5e9475642fe0d0084454e4111ee29fa14
+  ref: v1.15.0-0-gd8785c6c380db9afee054d39b54e643b26054b73
 - kind: cargo2
   ref:
   - kind: registry
@@ -80,10 +80,10 @@ sources:
     version: 0.21.7
     sha: 9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567
   - kind: git
-    commit: f4dd05a74ccb54084093c9167317a14356ca53e4
-    repo: https://github.com/bootc-dev/bcvk
+    commit: 33b4bccc89596fb7b95e3975388f13d0828b1960
+    repo: github:bootc-dev/bcvk.git
     query:
-      rev: f4dd05a74ccb54084093c9167317a14356ca53e4
+      rev: 33b4bccc89596fb7b95e3975388f13d0828b1960
     name: bcvk-qemu
     version: 0.1.0
   - kind: registry
@@ -180,7 +180,7 @@ sources:
     sha: 613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724
   - kind: git
     commit: 2203e8f331cc41afafa0f81e9a2df7d681e9f631
-    repo: https://github.com/composefs/composefs-rs
+    repo: github:composefs/composefs-rs.git
     query:
       rev: 2203e8f
     name: cfsctl
@@ -239,28 +239,28 @@ sources:
     sha: 55b672471b4e9f9e95499ea597ff64941a309b2cdbffcc46f2cc5e2d971fd335
   - kind: git
     commit: 2203e8f331cc41afafa0f81e9a2df7d681e9f631
-    repo: https://github.com/composefs/composefs-rs
+    repo: github:composefs/composefs-rs.git
     query:
       rev: 2203e8f
     name: composefs
     version: 0.3.0
   - kind: git
     commit: 2203e8f331cc41afafa0f81e9a2df7d681e9f631
-    repo: https://github.com/composefs/composefs-rs
+    repo: github:composefs/composefs-rs.git
     query:
       rev: 2203e8f
     name: composefs-boot
     version: 0.3.0
   - kind: git
     commit: 2203e8f331cc41afafa0f81e9a2df7d681e9f631
-    repo: https://github.com/composefs/composefs-rs
+    repo: github:composefs/composefs-rs.git
     query:
       rev: 2203e8f
     name: composefs-ioctls
     version: 0.3.0
   - kind: git
     commit: 2203e8f331cc41afafa0f81e9a2df7d681e9f631
-    repo: https://github.com/composefs/composefs-rs
+    repo: github:composefs/composefs-rs.git
     query:
       rev: 2203e8f
     name: composefs-oci
@@ -1063,12 +1063,12 @@ sources:
     sha: e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2
   - kind: registry
     name: similar
-    version: 3.0.0
-    sha: 26d0b06eba54f0ca0770f970a3e89823e766ca638dd940f8469fa0fa50c75396
+    version: 2.7.0
+    sha: bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa
   - kind: registry
     name: similar-asserts
-    version: 2.0.0
-    sha: 997e6ca38e97437973fc9f7f50a50d1274cacd874341a4960fea90067291038c
+    version: 1.7.0
+    sha: b5b441962c817e33508847a22bd82f03a30cff43642dc2fae8b050566121eb9a
   - kind: registry
     name: slab
     version: 0.4.11
