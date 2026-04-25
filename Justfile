@@ -56,15 +56,14 @@ bst-nspawn *ARGS:
     echo "==> Extracting bst2 container image..." | tee -a "$LOG"
     CONTAINER_ID=$(podman create "{{bst2_image}}")
     ROOTFS=$(mktemp -d)
-    trap "podman rm -f $CONTAINER_ID 2>/dev/null; sudo rm -rf $ROOTFS 2>/dev/null" EXIT
+    CUSTOM_RESOLV=$(mktemp)
+    trap "podman rm -f $CONTAINER_ID 2>/dev/null; sudo rm -rf $ROOTFS 2>/dev/null; rm -f $CUSTOM_RESOLV 2>/dev/null" EXIT
 
     podman export "$CONTAINER_ID" | tar -x -C "$ROOTFS"
     echo "✓ Image extracted to $ROOTFS" | tee -a "$LOG"
 
     # Run systemd-nspawn container
     echo "==> Running bst in systemd-nspawn..." | tee -a "$LOG"
-    CUSTOM_RESOLV=$(mktemp)
-    trap "rm -f $CUSTOM_RESOLV" EXIT
     printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' > "$CUSTOM_RESOLV"
 
     sudo systemd-nspawn \
