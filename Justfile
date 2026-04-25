@@ -31,12 +31,6 @@ bst *ARGS:
     set -euo pipefail
     mkdir -p "${HOME}/.cache/buildstream" "${HOME}/.cargo"
 
-    # Create temporary /etc/resolv.conf with explicit DNS servers
-    # (needed when Tailscale is active with exit node enabled)
-    RESOLV_CONF=$(mktemp)
-    trap "rm -f $RESOLV_CONF" EXIT
-    printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' > "$RESOLV_CONF"
-
     podman run --rm \
         --privileged \
         --device /dev/fuse \
@@ -44,7 +38,6 @@ bst *ARGS:
         -v "{{justfile_directory()}}:/src:rw" \
         -v "${HOME}/.cache/buildstream:/root/.cache/buildstream:rw" \
         -v "${HOME}/.cargo:/root/.cargo:ro" \
-        -v "$RESOLV_CONF:/etc/resolv.conf:ro" \
         -w /src \
         "{{bst2_image}}" \
         bash -c 'bst --colors "$@"' -- ${BST_FLAGS:-} {{ARGS}}
