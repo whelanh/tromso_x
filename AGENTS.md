@@ -90,6 +90,16 @@ disown
 
 ## Reference Sources
 
+### Dakota & gnome-build-meta are the source of truth
+
+**For bootc, systemd, kernel, boot infrastructure, and non-KDE/QT packages:**
+- Clone and reference **`/var/home/james/reference-repos/dakota`** (projectbluefin/dakota — proven GNOME-based OS image using bootc)
+- Clone and reference **`/var/home/james/reference-repos/gnome-build-meta`** (GNOME's BuildStream recipe repository)
+- **NEVER** try to work around build issues (e.g., DNS/Cargo failures) with pre-built binaries or shortcuts
+- **ALWAYS** examine how Dakota/gnome-build-meta handle the issue first (e.g., bootc builds from source in their CI)
+- These repos are the canonical reference for bootc integration, boot configuration, and OCI image composition
+- When in doubt about non-KDE packages, check Dakota's `elements/` or `gnome-build-meta` before inventing new solutions
+
 **Always consult Arch Linux KDE PKGBUILDs** when determining cmake flags, dependencies, or build configuration for KDE packages:
 
 - **Arch KDE packages**: `https://github.com/archlinux/svntogit-community/tree/packages/kde-*/trunk/`

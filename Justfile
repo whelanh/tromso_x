@@ -33,8 +33,7 @@ bst *ARGS:
     podman run --rm \
         --privileged \
         --device /dev/fuse \
-        --dns=8.8.8.8 \
-        --dns=1.1.1.1 \
+        --network=host \
         -v "{{justfile_directory()}}:/src:rw" \
         -v "${HOME}/.cache/buildstream:/root/.cache/buildstream:rw" \
         -w /src \
@@ -220,14 +219,7 @@ generate-bootable-image $base_dir=base_dir $filesystem=filesystem:
 # ── bootc helper ─────────────────────────────────────────────────────
 [group('dev')]
 bootc *ARGS:
-    sudo podman run \
-        --rm --privileged --pid=host \
-        -it \
-        -v /var/lib/containers:/var/lib/containers \
-        -v /dev:/dev \
-        -v "{{base_dir}}:/data" \
-        --security-opt label=type:unconfined_t \
-        "{{image_name}}:{{image_tag}}" bootc {{ARGS}}
+    sudo bash -c 'podman run --rm --privileged --pid=host -v /var/lib/containers:/var/lib/containers -v /run/containers:/run/containers -v /dev:/dev -v "{{base_dir}}:/data" --security-opt label=type:unconfined_t "{{image_name}}:{{image_tag}}" bash -c "/usr/bin/bootc {{ARGS}}"'
 
 # ── Boot VM ──────────────────────────────────────────────────────────
 [group('test')]

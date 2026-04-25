@@ -44,8 +44,11 @@ depends:
   - kde-build-meta.bst:freedesktop-sdk.bst:components/dejavu-fonts.bst
   - kde-build-meta.bst:freedesktop-sdk.bst:components/liberation-fonts.bst
 
-  # bootc - container/image management (using Dakota's .bst file)
-  # Built from source like Dakota does - provides bootc for image management
-  - kde-build-meta.bst:gnomeos-deps/bootc.bst
+  # bootc - container/image management (DISABLED - requires CI infrastructure with full internet access)
+  # Dakota builds bootc successfully in GitHub Actions CI with full Cargo dependency fetch access
+  # Local builds fail: Cargo cannot resolve crates.io or github.com for ~400 dependencies + git deps
+  # Reference: /var/home/james/reference-repos/dakota/elements/gnomeos-deps/bootc.bst
+  # Solution: Implement CI/CD pipeline or pre-fetch all Cargo dependencies for offline build
+  # - kde-build-meta.bst:gnomeos-deps/bootc.bst
 
   # TODO: Add systemsettings back after fixing plasma-activities dependency order
