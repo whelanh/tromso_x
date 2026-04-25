@@ -30,6 +30,13 @@ bst *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "${HOME}/.cache/buildstream" "${HOME}/.cargo"
+
+    # Create temporary /etc/resolv.conf with explicit DNS servers
+    # (needed when Tailscale is active with exit node enabled)
+    RESOLV_CONF=$(mktemp)
+    trap "rm -f $RESOLV_CONF" EXIT
+    printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' > "$RESOLV_CONF"
+
     podman run --rm \
         --privileged \
         --device /dev/fuse \
@@ -37,9 +44,41 @@ bst *ARGS:
         -v "{{justfile_directory()}}:/src:rw" \
         -v "${HOME}/.cache/buildstream:/root/.cache/buildstream:rw" \
         -v "${HOME}/.cargo:/root/.cargo:ro" \
+        -v "$RESOLV_CONF:/etc/resolv.conf:ro" \
         -w /src \
         "{{bst2_image}}" \
         bash -c 'bst --colors "$@"' -- ${BST_FLAGS:-} {{ARGS}}
+
+# ── BuildStream via systemd-nspawn (experimental) ──────────────────────
+# Run bst2 in systemd-nspawn container instead of podman (less restrictive networking)
+# Usage: just bst-nspawn build oci/aurora.bst
+[group('dev')]
+bst-nspawn *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "${HOME}/.cache/buildstream" "${HOME}/.cargo"
+
+    # Extract bst2 OCI image to temporary directory
+    echo "==> Extracting bst2 container image..."
+    CONTAINER_ID=$(podman create "{{bst2_image}}")
+    ROOTFS=$(mktemp -d)
+    trap "podman rm -f $CONTAINER_ID 2>/dev/null; sudo rm -rf $ROOTFS 2>/dev/null" EXIT
+
+    podman export "$CONTAINER_ID" | tar -x -C "$ROOTFS"
+    echo "✓ Image extracted to $ROOTFS"
+
+    # Run systemd-nspawn container
+    echo "==> Running bst in systemd-nspawn..."
+    sudo systemd-nspawn \
+        --directory="$ROOTFS" \
+        --bind="{{justfile_directory()}}:/src" \
+        --bind="${HOME}/.cache/buildstream:/root/.cache/buildstream" \
+        --bind-ro="${HOME}/.cargo:/root/.cargo" \
+        --chdir=/src \
+        --network-veth \
+        --resolv-conf=copy-host \
+        --capability=all \
+        /bin/bash -c 'cd /src && bst --colors "$@"' -- ${BST_FLAGS:-} {{ARGS}}
 
 # ── Build log ─────────────────────────────────────────────────────────
 # Run build in background, log to /var/tmp/aurora-build.log, tail it
