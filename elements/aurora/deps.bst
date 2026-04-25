@@ -44,8 +44,8 @@ depends:
   - kde-build-meta.bst:freedesktop-sdk.bst:components/dejavu-fonts.bst
   - kde-build-meta.bst:freedesktop-sdk.bst:components/liberation-fonts.bst
 
-  # bootc - container/image management (disabled due to Cargo/DNS build issues)
-  # TODO: Resolve DNS/Cargo issues for bootc build (see feedback_bootc_dns.md)
-  # - kde-build-meta.bst:gnomeos-deps/bootc.bst
+  # bootc - container/image management (using Dakota's .bst file)
+  # Built from source like Dakota does - provides bootc for image management
+  - kde-build-meta.bst:gnomeos-deps/bootc.bst
 
   # TODO: Add systemsettings back after fixing plasma-activities dependency order
