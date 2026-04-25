@@ -29,13 +29,14 @@ export OCI_IMAGE_VERSION := env("OCI_IMAGE_VERSION", "latest")
 bst *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
-    mkdir -p "${HOME}/.cache/buildstream"
+    mkdir -p "${HOME}/.cache/buildstream" "${HOME}/.cargo"
     podman run --rm \
         --privileged \
         --device /dev/fuse \
         --network=host \
         -v "{{justfile_directory()}}:/src:rw" \
         -v "${HOME}/.cache/buildstream:/root/.cache/buildstream:rw" \
+        -v "${HOME}/.cargo:/root/.cargo:ro" \
         -w /src \
         "{{bst2_image}}" \
         bash -c 'bst --colors "$@"' -- ${BST_FLAGS:-} {{ARGS}}
