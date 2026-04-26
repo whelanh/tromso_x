@@ -5,7 +5,7 @@ sources:
 - kind: tar
   url: github:hanthor/kde-build-meta/archive/c8306c636.tar.gz
   ref: 62b9b01ce5a2885e1929cc6e025a169dcbc716164498a4ea5f8777654d518cab
-  base-dir: kde-build-meta-c8306c636e08b8b8f0e073f0bd78c1fb876be34
+  base-dir: kde-build-meta-c8306c63695e61aaa5224caef7c8a95b7bc6840f
 
 config:
   options:
