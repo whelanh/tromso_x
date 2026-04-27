@@ -470,3 +470,17 @@ undefined references from transitive dependencies:
 - Added `-DDocBookXML4_DTD_DIR=/usr/share/xml/docbook/xml-dtd/4.5` and `-DDocBookXSL_DIR=/usr/share/xml/docbook/xml/xsl-stylesheets` to cmake-local
 
 **Submodule commit:** `402fd7eb9` (kde-build-meta-local), `cf6a745` (main)
+
+---
+
+### [2026-04-27] - PLASMA-WORKSPACE: Add breeze-icons build-depend
+
+**Failing element:** kde/plasma/plasma-workspace.bst
+
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-plasma-workspace/6f53a9f0-build.20260427-111800.log
+
+**Root cause:** Linker failed on bin/krunner with `undefined reference to BreezeIcons::initIcons()`. libKF6IconThemes.so.6 references BreezeIcons::initIcons() from breeze-icons. While kiconthemes depends on breeze-icons, the transitive dependency is not propagated for linker resolution.
+
+**Fix applied:** Added `kde/frameworks/breeze-icons.bst` to build-depends.
+
+**Submodule commit:** `93b8f3a3e` (kde-build-meta-local), `bf1fa9a` (main)
