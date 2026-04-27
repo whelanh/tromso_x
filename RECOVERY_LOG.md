@@ -384,3 +384,15 @@ undefined references from transitive dependencies:
 - **plasma5support**: Removed `fixx11h.h` override directory (not referenced by any .bst)
 
 **Submodule commit:** `c59f819b6` (kde-build-meta-local), `a0bfd86` (main)
+
+---
+
+### [2026-04-27] - REMOVED ALL X11-DISABLING CMAKE FLAGS
+
+**Packages affected:** kguiaddons, kdbusaddons, kglobalaccel, kjobwidgets, kio, kidletime, kstatusnotifieritem, kcrash, kglobalacceld, plasma5support, plasma-integration, plasma-desktop, gwenview
+
+**Root cause:** `-DWITH_X11=OFF` / `-DWITHOUT_X11=ON` cmake flags were workarounds for missing X11 build-depends. Arch PKGBUILDs build all these packages with X11 enabled and zero X11-disabling flags.
+
+**Fix applied:** Stripped all `-DWITH_X11=OFF`, `-DWITHOUT_X11=ON`, `-DBUILD_KCM_MOUSE_X11`, `-DBUILD_KCM_TOUCHPAD_X11`, and `-DCMAKE_DISABLE_FIND_PACKAGE_XCB` cmake flags from all .bst files.
+
+**Submodule commit:** `b59ba045f` (kde-build-meta-local), `02d733f` (main)
