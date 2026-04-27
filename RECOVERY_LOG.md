@@ -346,3 +346,20 @@ The kscreenlocker build failed with `/usr/sbin/patch: *** malformed patch at lin
 - Deleted: `patches/kscreenlocker/override/x11info.h`
 
 **Lesson learned:** When X11 is already a build dependency, avoid adding patches that make it optional. Keep the build simple and use upstream code as-is.
+
+---
+
+### [2026-04-27] - RESOLVED: kwin build failure — undefined linker references to KF6Archive, KF6KIOCore, KF6KIOGui, KF6BreezeIcons
+
+The kwin build failed at the final linking step for `bin/kwin_wayland` with
+undefined references from transitive dependencies:
+
+- `KArchiveEntry::name()`, `KArchiveDirectory::copyTo()`, `KCompressionDevice`, `KTar`, `KZip` — from `libKF6Archive.so.6` (needed by `libKF6Svg`, `libKF6Package`)
+- `KIO::ApplicationLauncherJob`, `KIO::UntrustedProgramHandlerInterface` — from `libKF6KIOCore.so.6` / `libKF6KIOGui.so.6` (needed by `libKGlobalAccelD`)
+- `BreezeIcons::initIcons()` — from `libKF6BreezeIcons.so.6` (needed by `libKF6IconThemes`)
+
+**Root cause:** `karchive`, `kio`, and `breeze-icons` were not listed as build-depends in `kwin.bst`. They are transitive dependencies of libraries already linked (KF6Svg, KF6Package, KGlobalAccelD, KF6IconThemes), but without explicit build-depends their .so files weren't available at link time.
+
+**Fix:** Added `kde/frameworks/karchive.bst`, `kde/frameworks/kio.bst`, and `kde/frameworks/breeze-icons.bst` to build-depends in `kde-build-meta-local/elements/kde/plasma/kwin.bst`.
+
+**Lesson learned:** When a library links against another KDE library that has its own transitive dependencies, those transitive deps must also be declared as build-depends to ensure linker visibility.
