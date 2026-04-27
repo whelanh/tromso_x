@@ -484,3 +484,17 @@ undefined references from transitive dependencies:
 **Fix applied:** Added `kde/frameworks/breeze-icons.bst` to build-depends.
 
 **Submodule commit:** `93b8f3a3e` (kde-build-meta-local), `bf1fa9a` (main)
+
+---
+
+### [2026-04-27] - PLASMA-DESKTOP: Add qt6-qtsvg build-depend
+
+**Failing element:** kde/plasma/plasma-desktop.bst
+
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-plasma-desktop/b236f7f0-build.20260427-114632.log
+
+**Root cause:** CMake configure failed with `Could NOT find Qt6Svg`. plasma-desktop requires Qt6Svg for SVG icon rendering.
+
+**Fix applied:** Added `kde/qt6/qt6-qtsvg.bst` to build-depends.
+
+**Submodule commit:** `4921ac064` (kde-build-meta-local), `c741292` (main)
