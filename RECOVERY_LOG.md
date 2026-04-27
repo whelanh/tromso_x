@@ -363,3 +363,24 @@ undefined references from transitive dependencies:
 **Fix:** Added `kde/frameworks/karchive.bst`, `kde/frameworks/kio.bst`, and `kde/frameworks/breeze-icons.bst` to build-depends in `kde-build-meta-local/elements/kde/plasma/kwin.bst`.
 
 **Lesson learned:** When a library links against another KDE library that has its own transitive dependencies, those transitive deps must also be declared as build-depends to ensure linker visibility.
+
+---
+
+### [2026-04-27] - X11/XCB PATCH CLEANUP (Systematic Fix)
+
+**Failing element(s):** Multiple (libkscreen, libplasma, kdeconnect, kwin, dolphin, bluedevil, okular, plasma-workspace)
+
+**Root cause:** All X11/XCB-related patches were workarounds for missing build-depends. Arch PKGBUILDs build all packages with X11 enabled and zero patches. Instead of patching to make X11 optional, the correct fix is to add X11/XCB libraries as build-depends.
+
+**Fix applied:**
+- **libkscreen**: Removed `0001-optional-xcb-dpms.patch`, removed `-DCMAKE_DISABLE_FIND_PACKAGE_XCB=ON`, added `xorg-lib-xcb.bst` + `xcb-util.bst`
+- **libplasma**: Removed 4 KX11Extras guard patches, removed `-DWITHOUT_X11=ON`, added `xorg-lib-x11.bst` + `xorg-lib-xcb.bst` + `xcb-util.bst`
+- **kdeconnect**: Removed 2 X11 notification patches, removed `-DWITH_X11=OFF`, added `xorg-lib-x11.bst` + `xorg-lib-xcb.bst` + `xorg-lib-xtst.bst` + `libei.bst` + `libevdev.bst`
+- **kwin**: Removed `0001-killer-no-x11.patch`
+- **dolphin**: Removed `0001-optional-x11.patch`
+- **bluedevil**: Removed `0001-drop-x11-pin-activation.patch`
+- **okular**: Removed `0001-optional-x11.patch` (kept `0002-dvi-qstringliteral.patch` — not X11-related)
+- **plasma-workspace**: Added `xorg-lib-ice.bst` + `xorg-lib-sm.bst` for ksmserver (CMake failed with `X11_ICE_LIB=NOTFOUND`)
+- **plasma5support**: Removed `fixx11h.h` override directory (not referenced by any .bst)
+
+**Submodule commit:** `c59f819b6` (kde-build-meta-local), `a0bfd86` (main)
