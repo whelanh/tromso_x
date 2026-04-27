@@ -1,0 +1,348 @@
+# Build Failure Recovery Log
+
+Automatically maintained by the pi recovery agent. Each entry documents a failure, the options considered, and the fix applied. Future recovery sessions read this file to avoid repeating analysis.
+
+---
+
+
+### [2026-04-26T20:10:09.883218] - FAILURE DETECTED
+
+**Failing element(s):** [f404544d] kde-build-meta.bst:freedesktop-sdk.bst:components/asciidoctor.bst: Try #1 failed, retrying[0m, [2710e306] kde-build-meta.bst:freedesktop-sdk.bst:components/lvm2-stage1.bst: Try #1 failed, retrying[0m, [2d264fca] kde-build-meta.bst:core-deps/systemd-base.bst: Try #1 failed, retrying[0m
+**Build log:** /root/.cache/buildstream/logs/gnome/kde-plasma-kwin/f835f6d5-build.20260426-143229.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-26T20:10:51.664825] - FAILURE DETECTED
+
+**Failing element(s):** [f404544d] kde-build-meta.bst:freedesktop-sdk.bst:components/asciidoctor.bst: Try #1 failed, retrying[0m, [2710e306] kde-build-meta.bst:freedesktop-sdk.bst:components/lvm2-stage1.bst: Try #1 failed, retrying[0m, [2d264fca] kde-build-meta.bst:core-deps/systemd-base.bst: Try #1 failed, retrying[0m
+**Build log:** /root/.cache/buildstream/logs/gnome/kde-plasma-kwin/f835f6d5-build.20260426-143229.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-26T20:42:30.483483] - FAILURE DETECTED
+
+**Failing element(s):** [f404544d] kde-build-meta.bst:freedesktop-sdk.bst:components/asciidoctor.bst: Try #1 failed, retrying[0m, [2710e306] kde-build-meta.bst:freedesktop-sdk.bst:components/lvm2-stage1.bst: Try #1 failed, retrying[0m, [2d264fca] kde-build-meta.bst:core-deps/systemd-base.bst: Try #1 failed, retrying[0m
+**Build log:** /root/.cache/buildstream/logs/gnome/kde-plasma-kwin/f835f6d5-build.20260426-143229.log
+**Status:** PENDING — awaiting pi recovery agent
+
+---
+
+### [2026-04-26] - RESOLVED: kwin build failure — missing private Qt6 X11 header
+
+The kwin build failed at step 659/1858 compiling `src/helpers/killer/killer.cpp` with `fatal error: private/qtx11extras_p.h: No such file or directory`, because that private Qt6 X11 extras header is not available in the BuildStream sandbox. The `.bst` file already carried `-DBUILD_WINDOW_KILLER=OFF` to skip the killer helper subdirectory, but the patch (`patches/kwin/0001-killer-no-x11.patch`) that introduces the `BUILD_WINDOW_KILLER` CMake option into `src/helpers/CMakeLists.txt` had been commented out in the sources section, rendering the cmake flag a no-op. Uncommenting the patch in `kde-build-meta-local/elements/kde/plasma/kwin.bst` restores the conditional build gate so that `-DBUILD_WINDOW_KILLER=OFF` takes effect and the killer subdirectory is excluded from the build entirely.
+
+### [2026-04-26T22:41:38.627832] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kwin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kwin/a26634c1-build.20260426-171131.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-26T22:58:39.237795] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kwin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kwin/a26634c1-build.20260426-172024.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-26T23:17:18.587024] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/frameworks/kwindowsystem.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-frameworks-kwindowsystem/5cc5136a-build.20260426-174431.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-26T23:17:18.792590] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/frameworks/kwindowsystem.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-frameworks-kwindowsystem/5cc5136a-build.20260426-174431.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-26T23:29:12.095955] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/frameworks/kwindowsystem.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-frameworks-kwindowsystem/5cc5136a-build.20260426-174431.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### kwindowsystem.bst — missing private/qtx11extras_p.h (2026-04-26)
+**Error:** `fatal error: private/qtx11extras_p.h: No such file or directory` during kwindowsystem build. This private Qt6 header is part of the QtGui module and requires X11/XCB support to be generated. **Root cause:** The `qt6-qtbase.bst` override in kde-build-meta-local was missing X11/XCB build dependencies (`xorg-lib-x11`, `xorg-lib-xcb`, `xcb-util-*`, `libxkbcommon`) and the cmake options `-DQT_FEATURE_xcb=ON` and `-DQT_FEATURE_xcb_xlib=ON`. Without these, Qt6 was built without X11/XCB support, so the `qtx11extras_p.h` private header was never generated. **Fix:** Added the missing X11/XCB dependencies and cmake options to `kde/qt6/qt6-qtbase.bst` to match the staged junction configuration, ensuring Qt6 provides the required private headers for KDE frameworks like kwindowsystem that depend on X11 integration.
+
+### [2026-04-27T04:44:27.687703] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/qt6/qt6-qtshadertools.bst: Running commands, kde-build-meta.bst:kde/qt6/qt6-qtsvg.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-qt6-qt6-qtsvg/ff4d4bd9-build.20260426-230928.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T04:44:28.485124] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/qt6/qt6-qtshadertools.bst: Running commands, kde-build-meta.bst:kde/qt6/qt6-qtsvg.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-qt6-qt6-qtsvg/ff4d4bd9-build.20260426-230928.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T04:44:29.453276] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/qt6/qt6-qtshadertools.bst: Running commands, kde-build-meta.bst:kde/qt6/qt6-qtsvg.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-qt6-qt6-qtsvg/ff4d4bd9-build.20260426-230928.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T04:44:32.348563] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/qt6/qt6-qtshadertools.bst: Running commands, kde-build-meta.bst:kde/qt6/qt6-qtsvg.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-qt6-qt6-qtsvg/ff4d4bd9-build.20260426-230928.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T05:36:50.855001] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/qt6/qt6-qtshadertools.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-qt6-qt6-qtshadertools/53c0ecc5-build.20260427-000645.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T05:36:51.784916] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/qt6/qt6-qtshadertools.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-qt6-qt6-qtshadertools/53c0ecc5-build.20260427-000645.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T05:36:52.583568] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/qt6/qt6-qtshadertools.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-qt6-qt6-qtshadertools/53c0ecc5-build.20260427-000645.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T05:37:21.761376] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/qt6/qt6-qtshadertools.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-qt6-qt6-qtshadertools/53c0ecc5-build.20260427-000645.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T05:37:23.456035] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/qt6/qt6-qtshadertools.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-qt6-qt6-qtshadertools/53c0ecc5-build.20260427-000645.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T07:01:54.487176] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/qt6/qt6-qtshadertools.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-qt6-qt6-qtshadertools/53c0ecc5-build.20260427-013148.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:16:27.787988] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b718b355-build.20260427-024625.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:16:29.772217] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b718b355-build.20260427-024625.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:16:30.748370] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b718b355-build.20260427-024625.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:16:30.748247] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b718b355-build.20260427-024625.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:16:31.221603] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b718b355-build.20260427-024625.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:16:32.089916] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b718b355-build.20260427-024625.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:16:32.456165] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b718b355-build.20260427-024625.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:33:21.312006] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kwin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kwin/9ea3a9d9-build.20260427-030318.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:47:00.677702] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kwin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kwin/9ea3a9d9-build.20260427-030318.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:47:02.658009] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kwin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kwin/9ea3a9d9-build.20260427-030318.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:47:03.599513] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kwin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kwin/9ea3a9d9-build.20260427-030318.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:47:04.059054] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kwin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kwin/9ea3a9d9-build.20260427-030318.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T08:47:04.929555] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kwin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kwin/9ea3a9d9-build.20260427-030318.log
+**Status:** PENDING — awaiting pi recovery agent
+
+---
+
+### kwin.bst — fatal error: netwm.h: No such file or directory (2026-04-27)
+**Error:** `/buildstream/gnome/kde/plasma/kwin.bst/src/group.h:19:10: fatal error: netwm.h: No such file or directory`
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kwin/9ea3a9d9-build.20260427-030318.log
+
+**Root cause:** `netwm.h` is a KDE Frameworks header provided by `KF6WindowSystem` (kwindowsystem) at `/usr/include/KF6/KWindowSystem/netwm.h`. It is generated by `ecm_generate_headers()` in the `KF6WindowSystemX11Plugin` and only installed when X11 support is enabled (`-DKWINDOWSYSTEM_X11=ON`).
+
+Commit `f8d12c47c` had disabled X11 in kwindowsystem (`-DKWINDOWSYSTEM_X11=OFF`) to work around a qt6-qtbase private headers issue. However, the qt6-qtbase private headers (`private/qtx11extras_p.h`) are now available via the local `kde/qt6/qt6-qtbase.bst` build dependency (which builds Qt6 with X11/XCB support). The kwindowsystem.bst was modified on disk to re-enable X11 but not yet committed.
+
+**Fix:** Committed the pending kwindowsystem.bst changes:
+- Changed `-DKWINDOWSYSTEM_X11=OFF` to `-DKWINDOWSYSTEM_X11=ON`
+- Moved X11 dependencies from `build-depends` to `depends` (xorg-lib-x11, xorg-lib-xcb) for proper runtime availability
+- Cleared kwindowsystem and kwin artifact caches to force rebuild with X11 support
+
+**Verification:** Verified that Arch Linux's `kwindowsystem` package installs `netwm.h` at `usr/include/KF6/KWindowSystem/netwm.h`. The header is part of the X11 plugin and requires `KWINDOWSYSTEM_X11=ON`.
+
+**Files changed:** `kde-build-meta-local/elements/kde/frameworks/kwindowsystem.bst` (commit 62837909b)
+**Artifacts cleared:** kwindowsystem, kwin
+
+### [2026-04-27T10:24:43.946845] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch, kde-build-meta.bst:kde/apps/dolphin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045256.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:24:44.873206] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch, kde-build-meta.bst:kde/apps/dolphin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045256.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:24:45.704465] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch, kde-build-meta.bst:kde/apps/dolphin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045256.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:24:46.663302] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch, kde-build-meta.bst:kde/apps/dolphin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045256.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:24:46.668990] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch, kde-build-meta.bst:kde/apps/dolphin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045256.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:24:47.080931] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch, kde-build-meta.bst:kde/apps/dolphin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045256.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:24:47.630354] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch, kde-build-meta.bst:kde/apps/dolphin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045256.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:24:48.521124] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch, kde-build-meta.bst:kde/apps/dolphin.bst: Running commands
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045256.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:29:35.334396] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045629.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:29:36.259755] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045629.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:29:37.093801] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045629.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:29:38.061645] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045629.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:29:38.472906] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045629.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:29:39.010625] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045629.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:29:39.902654] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045629.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:39:51.851573] - FAILURE DETECTED
+
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0001-optional-x11.patch
+**Build log:** /var/home/james/.cache/buildstream/logs/gnome/kde-plasma-kscreenlocker/b659676f-fetch.20260427-045629.log
+**Status:** PENDING — awaiting pi recovery agent
+
+### [2026-04-27T10:52:16.242042] - FAILURE DETECTED (PENDING)
+**Failing element(s):** kde-build-meta.bst:kde/plasma/kscreenlocker.bst: Applying local patch: patches/kscreenlocker/0004-guard-qx11application.patch
+**Build log:** /var/tmp/aurora-build.log
+
+### kscreenlocker.bst — redundant patch 0004 (2026-04-27)
+**Error:** `Reversed (or previously applied) patch detected!` when applying `patches/kscreenlocker/0004-guard-qx11application.patch` on `greeter/greeterapp.cpp`. Patch 0004 wraps the `QX11Application` usage with `#ifdef HAVE_X11` in `greeter/greeterapp.cpp`, but patch 0001 (`0001-optional-x11.patch`) already contains the exact same change. The two patches conflict because 0001 was expanded to include the greeter X11 guard that 0004 was originally created for.
+**Fix:** Removed the `0004-guard-qx11application.patch` entry from `kde-build-meta-local/elements/kde/plasma/kscreenlocker.bst` since it is fully subsumed by patch 0001.
+**Files changed:** `kde-build-meta-local/elements/kde/plasma/kscreenlocker.bst` (commit 22840f82a)
+**Artifacts cleared:** kscreenlocker
+
+---
+
+### [2026-04-27] - RESOLVED: kscreenlocker build failure — malformed patch at line 400
+
+The kscreenlocker build failed with `/usr/sbin/patch: *** malformed patch at line 400: 'return false;'` in `patches/kscreenlocker/0001-optional-x11.patch`. The patch was malformed because it was generated against an older version of the source code and no longer matched the current commit (093598fd on Plasma/6.6).
+
+**Root cause:** The patches (`0001-optional-x11.patch`, `0002-fix-x11info-ctor.patch`, `0003-add-source-include-for-fixx11h.patch`, `0004-guard-qx11application.patch`) and the `override/` directory were created to make X11 optional in kscreenlocker. However, X11 is already a build dependency via `xorg-lib-x11.bst`, `xorg-lib-xcb.bst`, and `xcb-util-keysyms.bst`. The patches are unnecessary and were causing build failures.
+
+**Fix:** Removed all X11-optional patches from `kde-build-meta-local/elements/kde/plasma/kscreenlocker.bst` and deleted the patch files and override directory. The upstream source now builds with X11 fully available.
+
+**Files changed:**
+- Modified: `kde-build-meta-local/elements/kde/plasma/kscreenlocker.bst` (removed patch sources)
+- Deleted: `patches/kscreenlocker/0001-optional-x11.patch`
+- Deleted: `patches/kscreenlocker/0002-fix-x11info-ctor.patch`
+- Deleted: `patches/kscreenlocker/0003-add-source-include-for-fixx11h.patch`
+- Deleted: `patches/kscreenlocker/0004-guard-qx11application.patch`
+- Deleted: `patches/kscreenlocker/override/fixx11h.h`
+- Deleted: `patches/kscreenlocker/override/x11info.h`
+
+**Lesson learned:** When X11 is already a build dependency, avoid adding patches that make it optional. Keep the build simple and use upstream code as-is.
