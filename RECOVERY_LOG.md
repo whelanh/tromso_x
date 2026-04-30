@@ -4,6 +4,20 @@ Automatically maintained by the pi recovery agent. Each entry documents a failur
 
 ---
 
+### [2026-04-30] - RESOLVED: kio build failure — KStartupInfo header missing
+
+**Failing element:** kde-build-meta.bst:kde/frameworks/kio.bst
+
+**Error:** `fatal error: KStartupInfo: No such file or directory` in `src/gui/kprocessrunner_p.h:18`.
+
+**Root cause:** `KStartupInfo` is provided by kwindowsystem but is only built when X11 support is enabled. kwindowsystem is built with `-DKWINDOWSYSTEM_X11=OFF`, so the header is not available. Commit `b59ba045f` removed `-DWITH_X11=OFF` from kio's cmake flags (re-enabling X11 support), but kwindowsystem still has X11 disabled, making KStartupInfo unavailable.
+
+**Fix applied:** Re-added `-DWITH_X11=OFF` to kio's `cmake-local` variable in `kde-build-meta-local/elements/kde/frameworks/kio.bst`. This disables the `#if HAVE_X11` guard that conditionally includes `<KStartupInfo>`.
+
+**Commit:** `beb85f07d` (kde-build-meta-local)
+
+---
+
 
 ### [2026-04-26T20:10:09.883218] - FAILURE DETECTED
 
@@ -637,3 +651,7 @@ undefined references from transitive dependencies:
 **Submodule commit:** `9d6dbc358` (kde-build-meta-local), `a7711c5` (main)
 
 **Note:** `bst artifact delete` could not be run (bst binary not available outside containers). Stale build cache will be invalidated on next build attempt.
+
+### [2026-04-30T08:18:22.179744] - FAILURE DETECTED (PENDING)
+**Failing element(s):** kde-build-meta.bst:kde/frameworks/kio.bst: Running commands
+**Build log:** /var/tmp/aurora-build.log
