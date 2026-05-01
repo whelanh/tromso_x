@@ -1,4 +1,8 @@
 cache:
+  - name: buildbarn
+    type: grpc
+    url: grpc://100.104.213.39:8980
+    timeout: 120
   - name: local
     type: grpc
     url: grpc://192.168.0.221:11001

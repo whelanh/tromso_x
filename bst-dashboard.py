@@ -59,9 +59,55 @@ BST_TARGET  = _args.target    or os.environ.get("BST_TARGET",           "oci/aur
 PROJECT_DIR = _args.project   or os.environ.get("BST_PROJECT",          os.path.dirname(os.path.abspath(__file__)))
 BST2_IMAGE  = _args.bst_image or os.environ.get("BST2_IMAGE",           _DEFAULT_BST2_IMAGE)
 
+STATE_FILE = "/var/tmp/bst-dashboard-state.json"
+
+def save_persistent_state(data: dict):
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"Failed to save persistent state: {e}", file=sys.stderr)
+
+def load_persistent_state() -> dict:
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Failed to load persistent state: {e}", file=sys.stderr)
+    return {}
+
 # ── Build process control ──────────────────────────────────────────────────────
 BUILD_LOCK = threading.Lock()
 BUILD_PROC: "subprocess.Popen | None" = None
+RECOVERY_PROC: "subprocess.Popen | None" = None
+
+_recovery_lock = threading.Lock()
+_recovery = {"status": "idle", "message": "", "timestamp": None, "elapsed": 0, "start_ts": None}
+
+def _recovery_snapshot() -> dict:
+    with _recovery_lock:
+        r = dict(_recovery)
+    if r["start_ts"] and r["status"] == "working":
+        r["elapsed"] = int(time.time() - r["start_ts"])
+    return r
+
+def _recovery_update(status: str, message: str = ""):
+    with _recovery_lock:
+        _recovery["status"] = status
+        _recovery["message"] = message
+        _recovery["timestamp"] = datetime.datetime.now().isoformat()
+        if status in ("working", "detecting"):
+            if _recovery["start_ts"] is None:
+                _recovery["start_ts"] = time.time()
+        elif status in ("idle", "success", "failed"):
+            _recovery["start_ts"] = None
+            _recovery["elapsed"] = 0
+        
+        # Save persistent state
+        p_state = load_persistent_state()
+        p_state["recovery"] = _recovery
+        save_persistent_state(p_state)
 
 _sysinfo_lock = threading.Lock()
 _sysinfo = {"cpu_pct": 0.0, "cpu_cores": [], "mem_used": 0, "mem_total": 0,
@@ -89,7 +135,7 @@ def build_running() -> bool:
 
 
 def start_build() -> bool:
-    global BUILD_PROC
+    global BUILD_PROC, RECOVERY_PROC
     with BUILD_LOCK:
         if build_running():
             return False
@@ -112,16 +158,33 @@ def start_build() -> bool:
             "build", BST_TARGET,
         ]
         BUILD_PROC = subprocess.Popen(cmd, stdout=log_f, stderr=log_f)
+
+        # Start failure recovery monitor alongside the build
+        recovery_script = os.path.join(PROJECT_DIR, "bst-failure-recovery.py")
+        if os.path.exists(recovery_script):
+            recovery_log = open("/tmp/bst-failure-recovery.log", "a")
+            RECOVERY_PROC = subprocess.Popen(
+                [sys.executable, recovery_script,
+                 "--log", LOG_FILE,
+                 "--project", PROJECT_DIR,
+                 "--dashboard-port", str(PORT)],
+                stdout=recovery_log,
+                stderr=recovery_log,
+            )
+
         return True
 
 
 def stop_build() -> bool:
-    global BUILD_PROC
+    global BUILD_PROC, RECOVERY_PROC
     with BUILD_LOCK:
         killed = False
         if BUILD_PROC is not None and BUILD_PROC.poll() is None:
             BUILD_PROC.terminate()
             killed = True
+        if RECOVERY_PROC is not None and RECOVERY_PROC.poll() is None:
+            RECOVERY_PROC.terminate()
+            RECOVERY_PROC = None
         cid = _bst_container_id()
         if cid:
             try:
@@ -218,6 +281,8 @@ class State:
                 "live": live,
                 "catching_up": self.catching_up,
                 "build_running": build_running(),
+                "recovery_running": RECOVERY_PROC is not None and RECOVERY_PROC.poll() is None,
+                "recovery": _recovery_snapshot(),
                 "version": self.version,
                 "sysinfo": dict(_sysinfo),
             }
@@ -397,6 +462,81 @@ def _bst_container_stats(cid: str) -> tuple[float | None, int | None]:
         return None, None
 
 
+_net_prev: "dict | None" = None
+
+def _read_net_rate() -> "tuple[float, float]":
+    """Return (rx_bytes_per_sec, tx_bytes_per_sec) across non-loopback interfaces."""
+    global _net_prev
+    totals: dict[str, tuple[int, int]] = {}
+    try:
+        with open("/proc/net/dev") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) < 10 or not parts[0].endswith(":"):
+                    continue
+                iface = parts[0].rstrip(":")
+                if iface == "lo":
+                    continue
+                totals[iface] = (int(parts[1]), int(parts[9]))  # rx_bytes, tx_bytes
+    except Exception:
+        return 0.0, 0.0
+
+    now = time.time()
+    rx_rate, tx_rate = 0.0, 0.0
+    if _net_prev:
+        prev_totals, prev_time = _net_prev
+        dt = max(now - prev_time, 0.001)
+        for iface, (rx, tx) in totals.items():
+            if iface in prev_totals:
+                prx, ptx = prev_totals[iface]
+                rx_rate += max(0, rx - prx) / dt
+                tx_rate += max(0, tx - ptx) / dt
+    _net_prev = (totals, now)
+    return rx_rate, tx_rate
+
+
+# ── Bihar remote CPU ───────────────────────────────────────────────────────────
+
+_bihar_lock = threading.Lock()
+_bihar = {"cpu_pct": None, "reachable": False}
+_bihar_cpu_prev: "tuple[int, int] | None" = None
+
+def _bihar_sampler():
+    global _bihar_cpu_prev
+    while True:
+        try:
+            result = subprocess.run(
+                ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes",
+                 "bihar", "cat /proc/stat"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    if line.startswith("cpu "):
+                        parts = line.split()
+                        vals = list(map(int, parts[1:8]))
+                        idle  = vals[3] + vals[4]
+                        total = sum(vals)
+                        if _bihar_cpu_prev:
+                            prev_idle, prev_total = _bihar_cpu_prev
+                            dt = total - prev_total
+                            pct = round(100.0 * (1.0 - (idle - prev_idle) / dt), 1) if dt else 0.0
+                            with _bihar_lock:
+                                _bihar["cpu_pct"] = max(0.0, min(100.0, pct))
+                                _bihar["reachable"] = True
+                        _bihar_cpu_prev = (idle, total)
+                        break
+            else:
+                with _bihar_lock:
+                    _bihar["reachable"] = False
+        except Exception:
+            with _bihar_lock:
+                _bihar["reachable"] = False
+        time.sleep(4)
+
+threading.Thread(target=_bihar_sampler, daemon=True).start()
+
+
 def _get_cpu_temp() -> "float | None":
     """Return CPU package temperature in °C from hwmon or thermal_zone, or None."""
     try:
@@ -477,6 +617,9 @@ def _sysinfo_sampler():
             cid = _bst_container_id()
             bst_cpu, bst_mem = _bst_container_stats(cid) if cid else (None, None)
             cpu_temp = _get_cpu_temp()
+            net_rx, net_tx = _read_net_rate()
+            with _bihar_lock:
+                bihar_snap = dict(_bihar)
 
             with _sysinfo_lock:
                 _sysinfo["cpu_pct"]     = cpu_pcts[0]
@@ -487,6 +630,9 @@ def _sysinfo_sampler():
                 _sysinfo["bst_mem"]     = bst_mem
                 _sysinfo["cpu_temp"]    = cpu_temp
                 _sysinfo["bst_running"] = bool(cid)
+                _sysinfo["net_rx"]      = net_rx
+                _sysinfo["net_tx"]      = net_tx
+                _sysinfo["bihar"]       = bihar_snap
         except Exception:
             pass
         time.sleep(2)
@@ -546,6 +692,14 @@ def parse_line(raw: str):
             s.catching_up = True
             s.build_start_ts = ts
             s.recent_lines.append(clean)
+            
+            # Persist build start time
+            try:
+                p_state = load_persistent_state()
+                p_state["build_start_ts"] = ts
+                save_persistent_state(p_state)
+            except Exception:
+                pass
         STATE.update(_set_start)
         return
 
@@ -978,6 +1132,20 @@ HTML = """<!DOCTYPE html>
     #log-modal-body { font-size: 12px; }
     #ctrl-btn { padding: 8px 14px; font-size: 12px; }
   }
+  /* Recovery agent banner */
+  #recovery-wrap { padding: 6px 16px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--yellow) 8%, var(--bg)); }
+  #recovery-inner { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+  #recovery-icon { font-size: 18px; }
+  #recovery-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  #recovery-title { font-weight: 600; color: var(--yellow); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  #recovery-msg { color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  #recovery-elapsed { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .recovery-spin { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--yellow); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+  #recovery-wrap.status-success { background: color-mix(in srgb, var(--green) 8%, var(--bg)); }
+  #recovery-wrap.status-success #recovery-title { color: var(--green); }
+  #recovery-wrap.status-failed  { background: color-mix(in srgb, var(--red) 8%, var(--bg)); }
+  #recovery-wrap.status-failed  #recovery-title { color: var(--red); }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -1034,7 +1202,28 @@ HTML = """<!DOCTYPE html>
     <div class="si-bar-bg"><div id="si-bst-bar" class="si-bar" style="width:0%;background:var(--yellow)"></div></div>
     <span class="si-txt" id="si-bst-txt">–</span>
   </div>
+  <div class="si-item" id="si-net-wrap">
+    <span class="si-lbl">NET</span>
+    <span class="si-txt" id="si-net-txt" style="font-variant-numeric:tabular-nums">–</span>
+  </div>
+  <div class="si-item" id="si-bihar-wrap" style="display:none">
+    <span class="si-lbl" title="Bihar (remote)">Bihar</span>
+    <div class="si-bar-bg"><div id="si-bihar-bar" class="si-bar" style="width:0%;background:var(--blue)"></div></div>
+    <span class="si-txt" id="si-bihar-txt">–</span>
+  </div>
   <div id="si-cores-wrap"></div>
+</div>
+
+<div id="recovery-wrap" style="display:none">
+  <div id="recovery-inner">
+    <span id="recovery-icon">🤖</span>
+    <div id="recovery-info">
+      <span id="recovery-title">Recovery Agent</span>
+      <span id="recovery-msg"></span>
+    </div>
+    <span id="recovery-elapsed"></span>
+    <div id="recovery-spinner" class="recovery-spin"></div>
+  </div>
 </div>
 
 <main>
@@ -1161,6 +1350,12 @@ function fmtDur(s) {
   return Math.floor(s/60) + 'm' + (s%60) + 's';
 }
 
+function fmtBytes(b) {
+  if (b < 1024) return b.toFixed(0) + ' B/s';
+  if (b < 1048576) return (b/1024).toFixed(0) + ' KB/s';
+  return (b/1048576).toFixed(1) + ' MB/s';
+}
+
 function fmtElapsed(s) {
   const h = Math.floor(s/3600);
   const m = Math.floor((s%3600)/60);
@@ -1279,6 +1474,54 @@ async function poll() {
       document.getElementById('si-bst-txt').textContent = bstPct.toFixed(1) + '% ' + bstMemGb;
     } else {
       bstWrap.style.display = 'none';
+    }
+
+    // Network
+    const netWrap = document.getElementById('si-net-wrap');
+    if (si.net_rx !== undefined || si.net_tx !== undefined) {
+      const rx = si.net_rx || 0, tx = si.net_tx || 0;
+      document.getElementById('si-net-txt').textContent =
+        '↓ ' + fmtBytes(rx) + '  ↑ ' + fmtBytes(tx);
+      netWrap.style.display = '';
+    } else {
+      netWrap.style.display = 'none';
+    }
+
+    // Bihar CPU
+    const biharWrap = document.getElementById('si-bihar-wrap');
+    const bihar = si.bihar || {};
+    if (bihar.reachable && bihar.cpu_pct !== null && bihar.cpu_pct !== undefined) {
+      biharWrap.style.display = '';
+      document.getElementById('si-bihar-bar').style.width = Math.min(100, bihar.cpu_pct) + '%';
+      document.getElementById('si-bihar-txt').textContent = bihar.cpu_pct.toFixed(1) + '%';
+    } else {
+      biharWrap.style.display = 'none';
+    }
+
+    // Recovery agent panel
+    const rec = d.recovery || {};
+    const recWrap = document.getElementById('recovery-wrap');
+    const isRecoveryVisible = d.recovery_running || (rec.status && rec.status !== 'idle');
+    recWrap.style.display = isRecoveryVisible ? '' : 'none';
+    if (isRecoveryVisible) {
+      recWrap.className = 'status-' + (rec.status || 'idle');
+      const statusLabels = {
+        idle: 'Recovery Agent', detecting: '🤖 Recovery Agent — Detecting…',
+        working: '🤖 Recovery Agent — Working…', success: '🤖 Recovery Agent — Fixed!',
+        failed: '🤖 Recovery Agent — Needs attention'
+      };
+      document.getElementById('recovery-title').textContent = statusLabels[rec.status] || '🤖 Recovery Agent';
+      document.getElementById('recovery-msg').textContent = rec.message || '';
+      const spinner = document.getElementById('recovery-spinner');
+      spinner.style.display = (rec.status === 'working' || rec.status === 'detecting') ? '' : 'none';
+      const elapsedEl = document.getElementById('recovery-elapsed');
+      if (rec.elapsed > 0) {
+        elapsedEl.textContent = fmtElapsed(rec.elapsed);
+      } else if (rec.timestamp) {
+        elapsedEl.textContent = new Date(rec.timestamp).toLocaleTimeString();
+      } else {
+        elapsedEl.textContent = '';
+      }
     }
 
     // Active jobs
@@ -1836,7 +2079,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
-        self.rfile.read(length)
+        body = self.rfile.read(length)
         path, _ = self._norm_path()
         if path == "/api/start":
             ok = start_build()
@@ -1847,6 +2090,14 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/deptree/refresh":
             threading.Thread(target=_fetch_deptree, daemon=True).start()
             self._json_reply({"ok": True})
+        elif path == "/api/recovery-status":
+            try:
+                data = json.loads(body or b"{}")
+                _recovery_update(data.get("status", "idle"), data.get("message", ""))
+            except Exception:
+                pass
+            self._json_reply({"ok": True})
+            return
         elif path == "/api/loop/toggle":
             try:
                 result = subprocess.run(["./toggle-loop.sh"], cwd="/var/home/james/dev/kde-linux", capture_output=True, timeout=5)
@@ -1931,6 +2182,14 @@ class Handler(BaseHTTPRequestHandler):
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # Load persistent state on startup
+    p_state = load_persistent_state()
+    if "recovery" in p_state:
+        with _recovery_lock:
+            _recovery.update(p_state["recovery"])
+    if "build_start_ts" in p_state:
+        STATE.build_start_ts = p_state["build_start_ts"]
+
     tailer = threading.Thread(target=tail_log, daemon=True)
     tailer.start()
 

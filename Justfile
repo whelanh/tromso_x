@@ -29,18 +29,19 @@ export OCI_IMAGE_VERSION := env("OCI_IMAGE_VERSION", "latest")
 bst *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
-    mkdir -p "${HOME}/.cache/buildstream" "${HOME}/.cargo"
+    mkdir -p "${HOME}/.cache/buildstream" "${HOME}/.cargo" "${HOME}/.config/buildstream"
 
-    podman run --rm \
+    podman --cgroup-manager=cgroupfs run --rm \
         --privileged \
         --device /dev/fuse \
         --network=host \
         -v "{{justfile_directory()}}:/src:rw" \
         -v "${HOME}/.cache/buildstream:/root/.cache/buildstream:rw" \
         -v "${HOME}/.cargo:/root/.cargo:ro" \
+        -v "${HOME}/.config/buildstream:/root/.config/buildstream:ro" \
         -w /src \
         "{{bst2_image}}" \
-        bash -c 'bst --colors "$@"' -- ${BST_FLAGS:-} {{ARGS}}
+        bash -c 'if [ -t 1 ]; then bst --colors "$@"; else bst --no-colors "$@"; fi' -- ${BST_FLAGS:-} {{ARGS}}
 
 # ── BuildStream via systemd-nspawn (experimental) ──────────────────────
 # Run bst2 in systemd-nspawn container instead of podman (less restrictive networking)
@@ -86,18 +87,24 @@ bst-build *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
     LOG=/var/tmp/aurora-build.log
-    
+
     # Clear old log to keep only the most recent run
     if [ -f "$LOG" ]; then
         echo "==> Clearing old build log"
         : > "$LOG"
     fi
-    
+
     echo "=== Build started at $(date) ===" > "$LOG"
-    BST_FLAGS="--max-jobs $(($(nproc) / 2)) --fetchers $(nproc) ${BST_FLAGS:-}"
-    just bst build ${ARGS:-oci/aurora.bst} >> "$LOG" 2>&1 &
-    echo "BST PID: $! — tailing $LOG (Ctrl-C stops tail, build continues)"
-    tail -f "$LOG"
+    FETCHERS="${BST_FETCHERS:-$(nproc)}"
+    BST_FLAGS="--max-jobs $(($(nproc) / 2)) --fetchers ${FETCHERS} ${BST_FLAGS:-}"
+    # When invoked with stdout/stderr redirected, write directly to LOG and don't tail
+    # (tailing the same file we write to creates an exponential feedback loop).
+    if [ -t 1 ]; then
+        just bst build ${ARGS:-oci/aurora.bst} 2>&1 | tee -a "$LOG"
+    else
+        echo "Non-interactive: writing directly to $LOG (no tail)" >&2
+        just bst build ${ARGS:-oci/aurora.bst} >> "$LOG" 2>&1
+    fi
 
 [group('build')]
 log:
@@ -367,3 +374,26 @@ chunkify image_ref:
         echo "==> Retagging chunked image to {{image_ref}}..."
         $SUDO_CMD podman tag "$NEW_REF" "{{image_ref}}"
     fi
+
+
+generate-bootable-image-new:
+    sudo podman run --rm --privileged \
+        --pull=never \
+        -v /var/lib/containers:/var/lib/containers \
+        -v "$(pwd)/.build-out:/output" \
+        quay.io/centos-bootc/bootc-image-builder:latest \
+        --type qcow2 \
+        --rootfs xfs \
+        localhost/aurora:latest
+
+install-aurora-shim:
+    rm -f .build-out/kde-linux-image-test/bootable.raw
+    dd if=/dev/zero of=.build-out/kde-linux-image-test/bootable.raw bs=1M count=10240
+    sudo podman run --rm --privileged --pid=host \
+        -v /var/lib/containers/storage:/var/lib/containers/storage \
+        -v "$(pwd)/.build-out/kde-linux-image-test:/output" \
+        -v "$(pwd)/.build-out/selinux-bypass.so:/selinux-bypass.so" \
+        -e "LD_PRELOAD=/selinux-bypass.so" \
+        --security-opt label=disable \
+        "localhost/aurora-final:latest" \
+        /usr/bin/bootc install to-disk --via-loopback /output/bootable.raw --filesystem ext4 --wipe --bootloader systemd --target-imgref localhost/aurora-final:latest

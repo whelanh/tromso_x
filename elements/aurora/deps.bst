@@ -9,10 +9,8 @@ depends:
   # Branding (sourced from get-aurora-dev/common + get-aurora-dev/branding)
   - aurora/common.bst
 
-  # System infrastructure (hardware enablement, printing, CLI tools)
+  # System infrastructure (hardware enablement)
   - aurora/hardware-enablement.bst
-  - aurora/printing.bst
-  - aurora/system-cli-tools.bst
 
   # Developer tooling (Aurora ships these in addition to base)
   - kde-build-meta.bst:freedesktop-sdk.bst:components/buildstream2.bst

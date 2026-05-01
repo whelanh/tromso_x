@@ -29,7 +29,7 @@ config:
       cat >"%{install-root}%{indep-libdir}/os-release" <<EOF
       NAME="${IMAGE_PRETTY_NAME}"
       ID="${ID}"
-      ID_LIKE="aurora"
+      ID_LIKE="fedora"
       VERSION="${IMAGE_TAG}"
       PRETTY_NAME="${IMAGE_PRETTY_NAME}"
       BUG_REPORT_URL="${BUG_SUPPORT_URL}"

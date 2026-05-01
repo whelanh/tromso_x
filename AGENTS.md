@@ -1,10 +1,51 @@
-# Aurora Dakota — Agent Context
+# Aurora KDE Linux — Agent Context
 
 Aurora is a BuildStream-based KDE Linux OCI/bootc image, modeled on Project Bluefin's `projectbluefin/dakota`.
 It builds KDE Plasma 6 on top of freedesktop-sdk using two repos:
 
 - **`hanthor/tromso`** — top-level OCI project (this repo)
 - **`hanthor/kde-build-meta`** — KDE `.bst` elements (junctioned in)
+
+---
+
+## Critical Rules About Reference Repos
+
+### Dakota & gnome-build-meta are authoritative
+
+**NEVER invent workarounds for build issues.** For any infrastructure, bootc, systemd, kernel, or non-KDE/QT packages:
+
+1. **FIRST**: Clone and examine `/var/home/james/reference-repos/dakota` and `/var/home/james/reference-repos/gnome-build-meta`
+2. **ALWAYS**: Copy the `.bst` patterns and approaches from these known-good repos
+3. **NEVER**: Use pre-built binaries, shortcuts, or workarounds to bypass build failures
+4. **EXAMPLE**: When bootc compilation fails with Cargo DNS errors:
+   - Don't create a bootc import element with a pre-built binary ❌
+   - Instead, examine how Dakota/gnome-build-meta compile bootc in their CI ✓
+   - Copy their exact `.bst` configuration and build infrastructure
+
+### Reference Sources
+
+| Situation | Reference |
+|-----------|-----------|
+| Bootc build issues | Dakota CI config + gnome-build-meta |
+| Boot infrastructure (systemd-boot, fwupd, initramfs) | gnome-build-meta |
+| OCI composition, layering, or export | Dakota's oci/ elements |
+| Non-KDE package configuration | gnome-build-meta |
+| KDE package cmake flags, dependencies | Arch Linux PKGBUILD |
+
+### Bootc Handling
+
+Bootc is a critical tool for creating bootable OCI images. It is compiled from source (Rust, ~400 Cargo dependencies) in:
+- `gnome-build-meta`: https://gitlab.gnome.org/GNOME/gnome-build-meta (canonical reference)
+- `projectbluefin/dakota`: https://github.com/projectbluefin/dakota (proven working setup)
+
+If bootc build fails in the containerized BuildStream environment:
+1. Check Dakota's and gnome-build-meta's CI/build configuration (`*.yml` in `.gitlab-ci/` or `.github/workflows/`)
+2. Determine if they resolve DNS/Cargo issues via container networking or CI environment setup
+3. Apply the same approach rather than using a pre-built binary
+
+**Reference files**:
+- `/var/home/james/reference-repos/gnome-build-meta/elements/gnomeos-deps/bootc.bst`
+- `/var/home/james/reference-repos/dakota/elements/*/bootc.bst` (if exists)
 
 ---
 
@@ -38,24 +79,31 @@ TMPDIR=/var/tmp git commit -m "Update junction to kde-build-meta ${SHA} (...)"
 
 ---
 
-## Build Command
+## Build Commands (Use `just`)
+
+**MANDATORY**: Always use the `just` recipes for running any `bst` (BuildStream) or diagnostic commands. The `Justfile` wraps BuildStream inside a pinned container image with correct volume mounts and permissions to ensure reproducibility.
 
 ```bash
-nohup podman run --name aurora-build --privileged --device /dev/fuse --network=host \
-  -v "/var/home/james/dev/kde-linux:/src:rw" \
-  -v "/var/home/james/.cache/buildstream:/root/.cache/buildstream:rw" \
-  -w /src \
-  "registry.gitlab.com/freedesktop-sdk/infrastructure/freedesktop-sdk-docker-images/bst2:f89b4aef847ef040b345acceda15a850219eb8f1" \
-  bst --colors --max-jobs 16 --fetchers 32 build oci/aurora.bst \
-  >> /var/tmp/aurora-build.log 2>&1 &
-disown
+# Recommended: Background build with logging and tail
+just bst-build
+
+# Foreground build + OCI export
+just build
+
+# Arbitrary BuildStream command (shell, show, checkout, etc.)
+just bst <command> <args>
+
+# Example: Run shell in a sandbox
+just bst shell oci/aurora.bst
+
+# View logs
+just log
 ```
 
-- `--max-jobs 16` — builders (do not raise above 16; 32 locked up the desktop)
-- `--fetchers 32` — fetchers (more is fine; improves network utilisation)
-- Never use `just bst-build` directly in an agent — it blocks with `tail -f`
-- Log: `/var/tmp/aurora-build.log`
-- Container restart: `podman stop aurora-build && podman rm aurora-build` then re-run
+- **NEVER** run `bst` directly on the host or via `pipx` for project work.
+- Never use `just bst-build` directly in a blocking tool call — it uses `tail -f`.
+- The build container image is pinned in `Justfile` for reproducibility.
+- Build log location: `/var/tmp/aurora-build.log`
 
 ---
 
@@ -81,31 +129,9 @@ disown
    rm -rf ~/.cache/buildstream/logs/gnome/kde-CATEGORY-ELEMENT/
    ```
    **⚠️ CRITICAL**: Never clear `kde-*` broadly — this forces rebuild of ALL KDE elements, not just the fix.
-   Example: `rm -rf ~/.cache/buildstream/artifacts/refs/gnome/kde-*` invalidates every element's cache unnecessarily.
-   Instead, clear only the specific element that failed (e.g., `kde-apps-kcalc`, `kde-frameworks-kxmlgui`, `kde-plasma-kwin`).
+   Instead, clear only the specific element that failed.
 
 5. Commit + push `kde-build-meta`, update junction, restart build.
-
----
-
-## Reference Sources
-
-### Dakota & gnome-build-meta are the source of truth
-
-**For bootc, systemd, kernel, boot infrastructure, and non-KDE/QT packages:**
-- Clone and reference **`/var/home/james/reference-repos/dakota`** (projectbluefin/dakota — proven GNOME-based OS image using bootc)
-- Clone and reference **`/var/home/james/reference-repos/gnome-build-meta`** (GNOME's BuildStream recipe repository)
-- **NEVER** try to work around build issues (e.g., DNS/Cargo failures) with pre-built binaries or shortcuts
-- **ALWAYS** examine how Dakota/gnome-build-meta handle the issue first (e.g., bootc builds from source in their CI)
-- These repos are the canonical reference for bootc integration, boot configuration, and OCI image composition
-- When in doubt about non-KDE packages, check Dakota's `elements/` or `gnome-build-meta` before inventing new solutions
-
-**Always consult Arch Linux KDE PKGBUILDs** when determining cmake flags, dependencies, or build configuration for KDE packages:
-
-- **Arch KDE packages**: `https://github.com/archlinux/svntogit-community/tree/packages/kde-*/trunk/`
-- **KDE Linux packaging**: `https://github.com/KDE/linux-packaging`
-- **Rationale**: Arch maintains actively-updated, minimal, and correct cmake flags for KDE Plasma 6. When a KDE element fails due to wrong flags or missing deps, check the corresponding Arch PKGBUILD first.
-  - Example: sddm's `-DBUILD_WITH_QT6=ON` is the correct minimal flag (Arch confirmed), not the complex multi-flag approach
 
 ---
 
@@ -144,29 +170,23 @@ Pattern — if upstream `CMakeLists.txt` has `find_package(KF6Foo REQUIRED)`, th
 
 ---
 
-## Repository Structure
+## File locations
 
-```
-hanthor/tromso          (this repo)
-├── elements/
-│   ├── kde-build-meta.bst     junction → hanthor/kde-build-meta
-│   └── oci/aurora.bst         top-level build target
-└── Justfile
-
-hanthor/kde-build-meta
-└── elements/kde/
-    ├── qt6/       (29 elements — qt6-qtbase, qt6-qtdeclarative, etc.)
-    ├── frameworks/ (69 elements — kcoreaddons, kio, kirigami, etc.)
-    ├── libs/      (7 elements)
-    ├── plasma/    (40 elements — plasma-workspace, kwin, sddm, etc.)
-    └── apps/      (7 elements — dolphin, konsole, kate, etc.)
-```
+- **Reference repos**: `/var/home/james/reference-repos/`
+  - `dakota/` — Project Bluefin Dakota (GNOME-based, bootc-enabled)
+  - `gnome-build-meta/` — GNOME's BuildStream repository
+- **Build logs**: `/var/tmp/aurora-build.log`
+- **Cache**: `~/.cache/buildstream/`
+- **This project**: `/var/home/james/dev/kde-linux/`
 
 ---
 
-## Known Issues / History
+## How to Use This (AI Assistant Mandate)
 
-- **Qt6Gui/Qt6Widgets not found in sandbox**: Fixed by adding `kde/qt6/qt6-qtbase.bst` to `build-depends` of all KDE cmake elements. The freedesktop-sdk sandbox does not expose Qt unless explicitly requested.
-- **kio build-depends**: kio needs all its KDE framework dependencies also listed in `build-depends` (kconfig, kcoreaddons, ki18n, kservice, solid, kcrash, kwindowsystem, kbookmarks, kcolorscheme, kcompletion, kguiaddons, kiconthemes, kitemviews, kjobwidgets, kwidgetsaddons, kdbusaddons, kauth, kcodecs).
-- **GitHub tarball non-determinism**: SHA256 changes on each request. Always download fresh and recompute. The `base-dir` uses the full 40-char SHA in the directory name.
-- **aliases.yml triggers full rebuild**: `include/aliases.yml` is part of the project configuration hash. Adding a new alias invalidates the cache key for **every element** in the project, forcing a complete rebuild. Only add aliases to `aliases.yml` when multiple elements will use them. For a single new element, use a direct `https://` URL instead.
+When you are asked to fix a build failure, add a package, or resolve an infrastructure issue:
+
+1. **DO NOT** search the web or guess at solutions.
+2. **DO** read the reference repo files from `/var/home/james/reference-repos/`.
+3. **DO** compare the working configuration in Dakota/gnome-build-meta to the Aurora configuration.
+4. **DO** apply the exact pattern or approach used in the reference repos.
+5. **DO** document the reasoning in memory or commit messages.

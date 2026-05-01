@@ -1,11 +1,14 @@
 kind: script
-description: Aurora KDE Linux OCI image
+description: Aurora KDE Linux OCI image (layered on KDE Linux OS)
 
 build-depends:
   - kde-build-meta.bst:freedesktop-sdk.bst:components/fakecap.bst
   - kde-build-meta.bst:freedesktop-sdk.bst:components/oci-builder.bst
   - kde-build-meta.bst:freedesktop-sdk.bst:components/glib.bst
   - kde-build-meta.bst:freedesktop-sdk.bst:vm/prepare-image.bst
+  - filename: kde-build-meta.bst:oci/kde-linux/image.bst
+    config:
+      location: /parent
   - filename: oci/layers/aurora.bst
     config:
       location: /layer
@@ -25,10 +28,6 @@ variables:
 config:
   commands:
     - mkdir /fakecap
-    # Clean up /lib/modules entirely - depmod will rebuild what it needs
-    - |
-      rm -rf /layer/lib/modules
-      mkdir -p /layer/lib/modules
     - |
       prepare-image.sh \
          --sysroot /layer \
@@ -40,13 +39,13 @@ config:
       systemd-sysusers --root /layer
 
     - |
-      glib-compile-schemas /layer/usr/share/glib-2.0/schemas
+      if [ -d /layer/usr/share/glib-2.0/schemas ]; then
+        glib-compile-schemas /layer/usr/share/glib-2.0/schemas
+      fi
 
-    # Enable SSH service for remote access
     - |
       systemctl --root=/layer enable sshd.service || true
 
-    # bootc images must not have both /etc and /usr/etc.
     - |
       if [ -d /layer/usr/etc ]; then
         mkdir -p /layer/etc
@@ -62,13 +61,15 @@ config:
       images:
       - os: linux
         architecture: "%{go-arch}"
+        parent:
+          image: /parent
         layer: /layer
-        comment: "Aurora KDE Linux image (no parent)"
+        comment: "Aurora KDE Linux (layered on KDE Linux OS)"
         config:
           Labels:
             'com.github.containers.toolbox': 'true'
             'org.opencontainers.image.title': 'Aurora'
-            'org.opencontainers.image.description': 'A KDE Plasma desktop image based on freedesktop-sdk'
+            'org.opencontainers.image.description': 'Aurora KDE Plasma desktop, layered on KDE Linux'
             'org.opencontainers.image.vendor': 'Hanthor'
             'org.opencontainers.image.licenses': 'Apache-2.0'
             'org.opencontainers.image.url': 'https://github.com/hanthor/tromso'

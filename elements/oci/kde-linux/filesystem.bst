@@ -2,13 +2,17 @@ kind: compose
 description: Filesystem for KDE Linux OCI image
 
 build-depends:
-- oci/kde-linux/stack.bst
-- kde-build-meta.bst:oci/kde-linux/manifest.bst
+  - oci/kde-linux/stack.bst
+  - kde-build-meta.bst:oci/kde-linux/manifest.bst
 
 config:
+  include:
+    - runtime
+    - bootc
+    - ostree-boot
   exclude:
-  - debug
-  - devel
-  - doc
-  - extra
-  - static-blocklist
+    - debug
+    - devel
+    - doc
+    - extra
+    - static-blocklist
