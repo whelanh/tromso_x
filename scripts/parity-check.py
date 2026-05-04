@@ -545,7 +545,7 @@ BST_TRANSITIVE_DEPS = {
     "xdg-desktop-portal",
     # VPN backend libraries (deps of NM VPN plugins)
     "openvpn", "openconnect", "vpnc", "vpnc-scripts",
-    "strongswan", "xl2tpd",
+    "strongswan", "xl2tpd", "sstp-client",
     # iMobileDevice chain (iPhone USB sync support)
     "libimobiledevice", "libplist", "libusbmuxd",
     # Static / build-time only libs
