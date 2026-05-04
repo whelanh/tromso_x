@@ -9,6 +9,9 @@ depends:
   # dosfstools: mkfs.fat required by bootc install to-disk for EFI partition
   - kde-build-meta.bst:freedesktop-sdk.bst:components/dosfstools.bst
 
+  # System configuration: dbus units, system users, sshd, networkd DHCP
+  - aurora/system-config.bst
+
   # containers policy.json: required by bootc at runtime to accept images
   # (containers-common puts this in 'sysconf' split which aurora-runtime excludes)
   - aurora/containers-config.bst

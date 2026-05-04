@@ -214,7 +214,7 @@ export:
     fi
     DATE_TAG="$(date -u +%Y%m%d)"
     printf 'FROM %s\nRUN sed -i "s/^VERSION_ID=.*/VERSION_ID=\\"%s\\"/" /usr/lib/os-release \\\n    && sed -i "s/^IMAGE_VERSION=.*/IMAGE_VERSION=\\"%s\\"/" /usr/lib/os-release\n' "$IMAGE_ID" "$DATE_TAG" "$DATE_TAG" \
-        | $SUDO_CMD podman build --pull=never --security-opt label=type:unconfined_t --squash-all ${LABEL_ARGS} -t "{{image_name}}:{{image_tag}}" -f - .
+        | $SUDO_CMD podman build --pull=never --security-opt label=type:unconfined_t ${LABEL_ARGS} -t "{{image_name}}:{{image_tag}}" -f - .
     $SUDO_CMD podman rmi "$IMAGE_ID" || true
     echo "==> Export complete: {{image_name}}:{{image_tag}}"
     just chunkify "{{image_name}}:{{image_tag}}"
@@ -243,18 +243,41 @@ generate-bootable-image $base_dir=base_dir $filesystem=filesystem:
     fi
 
     echo "==> Installing OS to disk image via bootc..."
+    # --bootloader none: our image does not include bootupd (required by --bootloader systemd).
+    # We install systemd-boot manually below using files already present in the deployed root.
     just bootc install to-disk \
         --via-loopback /data/bootable.raw \
+        --generic-image \
         --filesystem "${filesystem}" \
         --wipe \
-        --composefs-backend \
-        --bootloader systemd \
+        --bootloader none \
         --karg systemd.firstboot=no \
         --karg splash \
         --karg quiet \
         --karg console=tty0 \
         --karg console=ttyS0 \
         --karg systemd.debug_shell=ttyS1
+
+    echo "==> Manually installing systemd-boot EFI files..."
+    LOOP=$(sudo losetup -f --show -P "${base_dir}/bootable.raw")
+    sudo mkdir -p /mnt/aurora-efi /mnt/aurora-root-efi
+    sudo mount "${LOOP}p2" /mnt/aurora-efi
+    sudo mount "${LOOP}p3" /mnt/aurora-root-efi
+    SYSROOT=$(ls -d /mnt/aurora-root-efi/ostree/deploy/default/deploy/*.0 2>/dev/null | head -1)
+    EFI_SRC="${SYSROOT}/usr/lib/systemd/boot/efi"
+    sudo install -Dm755 "${EFI_SRC}/systemd-bootx64.efi" /mnt/aurora-efi/EFI/systemd/systemd-bootx64.efi
+    sudo install -Dm755 "${EFI_SRC}/systemd-bootx64.efi" /mnt/aurora-efi/EFI/BOOT/BOOTX64.EFI
+    ENTRY=$(ls /mnt/aurora-root-efi/boot/loader.1/entries/ostree-1.conf 2>/dev/null | head -1)
+    if [ -n "$ENTRY" ]; then
+        BOOT_OSTREE=$(grep -Po '(?<=initrd )/boot/ostree/[^ ]+' "$ENTRY" | head -1 | xargs dirname)
+        sudo mkdir -p "/mnt/aurora-efi${BOOT_OSTREE}"
+        sudo cp -r "/mnt/aurora-root-efi${BOOT_OSTREE}/." "/mnt/aurora-efi${BOOT_OSTREE}/"
+        sudo mkdir -p /mnt/aurora-efi/loader/entries
+        sudo cp "$ENTRY" /mnt/aurora-efi/loader/entries/
+        echo "timeout 5" | sudo tee /mnt/aurora-efi/loader/loader.conf
+    fi
+    sudo umount /mnt/aurora-efi /mnt/aurora-root-efi
+    sudo losetup -d "$LOOP"
 
     echo "==> Bootable disk image ready: ${base_dir}/bootable.raw"
     sync
@@ -294,9 +317,23 @@ boot-vm $base_dir=base_dir:
             if [ -f "$candidate" ]; then cp "$candidate" "$OVMF_VARS"; break; fi
         done
     fi
-    echo "==> Booting Aurora via QEMU with VNC (127.0.0.1:5900)..."
-    echo "    SSH: ssh -p 2222 root@127.0.0.1 (if ready)"
-    qemu-system-x86_64 \
+    echo "==> Booting Aurora in QEMU (background)..."
+    echo "    SSH:    ssh -p 2222 -i ~/.ssh/id_ed25519 root@127.0.0.1"
+    echo "    Serial: telnet 127.0.0.1 4444"
+    echo "    Logs:   tail -f /tmp/aurora-serial.log"
+    echo "    Stop:   kill \$(cat /tmp/aurora-vm.pid)"
+    QEMU_BIN=""
+    for candidate in qemu-system-x86_64 /usr/libexec/qemu-kvm; do
+        if command -v "$candidate" &>/dev/null || [ -x "$candidate" ]; then
+            QEMU_BIN="$candidate"
+            break
+        fi
+    done
+    if [ -z "$QEMU_BIN" ]; then
+        echo "ERROR: qemu-system-x86_64 not found. Install qemu-kvm." >&2
+        exit 1
+    fi
+    "$QEMU_BIN" \
         -enable-kvm -m "{{vm_ram}}" -cpu host -smp "{{vm_cpus}}" \
         -drive file="${DISK}",format=raw,if=virtio \
         -drive if=pflash,format=raw,readonly=on,file="${OVMF_CODE}" \
@@ -305,7 +342,10 @@ boot-vm $base_dir=base_dir:
         -device virtio-keyboard -device virtio-mouse \
         -device virtio-net-pci,netdev=net0 \
         -netdev user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22 \
-        -serial mon:stdio
+        -serial telnet:127.0.0.1:4444,server,nowait \
+        -display none \
+        -daemonize \
+        -pidfile /tmp/aurora-vm.pid
 
 # ── Chunkah ──────────────────────────────────────────────────────────
 chunkify image_ref:
