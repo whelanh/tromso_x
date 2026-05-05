@@ -53,10 +53,24 @@ jobs:
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
         with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-client-secret: ${{ secrets.TS_OAUTH_CLIENT_SECRET }}
+          tags: tag:ci
 
       - name: Verify BuildGrid reachable
-        run: nc -zv buildgrid.manatee-basking.ts.net 50051 && echo "✓ BuildGrid reachable"
+        run: |
+          echo "Waiting for Tailscale routes to propagate…"
+          for i in $(seq 1 12); do
+            if nc -zv buildgrid.manatee-basking.ts.net 50051 2>/dev/null; then
+              echo "✓ BuildGrid reachable"
+              exit 0
+            fi
+            echo "Attempt ${i}/12 — not yet reachable, waiting 5s…"
+            sleep 5
+          done
+          echo "✗ BuildGrid unreachable after 60s" >&2
+          tailscale status
+          exit 1
 
       # ── BST setup ────────────────────────────────────────────────────
       - name: Pull bst2 image
