@@ -24,7 +24,7 @@ env:
   IMAGE_NAME: tromso
   IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
   BST_TARGET: oci/tromso.bst
-  BST2_IMAGE: registry.gitlab.com/freedesktop-sdk/infrastructure/freedesktop-sdk-docker-images/bst2:f89b4aef847ef040b345acceda15a850219eb8f1
+  BST2_IMAGE: registry.gitlab.com/freedesktop-sdk/infrastructure/freedesktop-sdk-docker-images/bst2:64eb0b4930d57a92710822898fb73af6cc1ae35d
   BUILDGRID_ENDPOINT: grpc://buildgrid.manatee-basking.ts.net:50051
 
 concurrency:
@@ -118,6 +118,10 @@ jobs:
           just bst build "$BST_TARGET"
 
       # ── Export + push ─────────────────────────────────────────────────
+      - name: Capture build timestamp
+        id: timestamp
+        run: echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
       - name: Export OCI image
         env:
           BUILD_IMAGE_NAME: ${{ env.IMAGE_NAME }}
@@ -126,10 +130,6 @@ jobs:
           OCI_IMAGE_CREATED: ${{ steps.timestamp.outputs.created }}
           BST_FLAGS: --no-interactive
         run: just export
-
-      - name: Capture build timestamp
-        id: timestamp
-        run: echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
         if: ${{ github.event_name != 'pull_request' && inputs.push_image != false }}
