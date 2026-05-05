@@ -287,10 +287,10 @@ generate-bootable-image $base_dir=base_dir $filesystem=filesystem:
     # Set root password (hash for 'aurora') in the deploy root
     ROOT_HASH=$(openssl passwd -6 'aurora')
     sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "${DEPLOY2}/etc/shadow"
-    # authorized_keys: write to the deploy checkout's var, which is what
-    # /var maps to at runtime (not ostree/deploy/default/var/ — that's only
-    # visible via /sysroot at runtime, not via /var directly).
-    VAR_ROOT="${DEPLOY2}/var/roothome"
+    # authorized_keys: write to the ostree live var (ostree/deploy/default/var/),
+    # which is what /var maps to at runtime via bind mount — NOT the deploy
+    # checkout's var/ (which is read-only and not mounted as /var).
+    VAR_ROOT="/mnt/aurora-root-setup/ostree/deploy/default/var/roothome"
     if [ -f "${HOME}/.ssh/id_ed25519.pub" ]; then
         sudo install -Dm600 -o root -g root "${HOME}/.ssh/id_ed25519.pub" "${VAR_ROOT}/.ssh/authorized_keys"
         sudo chmod 700 "${VAR_ROOT}/.ssh"
