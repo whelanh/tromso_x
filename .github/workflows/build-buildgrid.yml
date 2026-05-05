@@ -1,0 +1,138 @@
+name: Build Aurora (BuildGrid)
+
+# Builds oci/aurora.bst using the home BuildGrid cluster via Tailscale.
+# The GitHub runner joins the tailnet, dispatches compilation to Bihar workers,
+# then exports and pushes the resulting OCI image to GHCR.
+
+on:
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: 'Push OCI image to GHCR'
+        type: boolean
+        default: true
+  schedule:
+    # Daily at 06:00 UTC (before the multi-runner job at 14:00)
+    - cron: '0 6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'elements/**'
+      - 'project.conf'
+      - 'include/**'
+
+env:
+  IMAGE_NAME: aurora
+  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+  BST_TARGET: oci/aurora.bst
+  BST2_IMAGE: registry.gitlab.com/freedesktop-sdk/infrastructure/freedesktop-sdk-docker-images/bst2:f89b4aef847ef040b345acceda15a850219eb8f1
+  BUILDGRID_ENDPOINT: grpc://buildgrid.manatee-basking.ts.net:50051
+
+concurrency:
+  group: buildgrid-aurora-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    # Large runner recommended for BST cache I/O — use standard for free tier
+    permissions:
+      contents: read
+      packages: write  # needed for GHCR push
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Just
+        uses: extractions/setup-just@v4
+
+      # ── Join Tailscale ───────────────────────────────────────────────
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-client-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags: tag:ci
+          # Ephemeral device — automatically removed when job ends
+
+      - name: Verify BuildGrid reachable
+        run: |
+          echo "Testing BuildGrid endpoint…"
+          nc -zv buildgrid.manatee-basking.ts.net 50051 && echo "✓ BuildGrid reachable"
+
+      # ── BST source cache ─────────────────────────────────────────────
+      - name: Cache BST sources
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/buildstream/sources
+          key: bst-sources-aurora-${{ hashFiles('elements/**/*.bst', 'junction.refs') }}
+          restore-keys: bst-sources-aurora-
+
+      - name: Pull bst2 image
+        run: docker pull "$BST2_IMAGE"
+
+      # ── Write BuildGrid remote execution config ──────────────────────
+      - name: Write BuildGrid config
+        run: |
+          cat > buildgrid-remote.conf << 'EOF'
+          remote-execution:
+            execution-service:
+              url: ${{ env.BUILDGRID_ENDPOINT }}
+              instance-name: ""
+            storage-service:
+              url: ${{ env.BUILDGRID_ENDPOINT }}
+              instance-name: ""
+            action-cache-service:
+              url: ${{ env.BUILDGRID_ENDPOINT }}
+              instance-name: ""
+          EOF
+
+      # ── Build ────────────────────────────────────────────────────────
+      - name: Build ${{ env.BST_TARGET }}
+        run: |
+          BST_FLAGS="--no-interactive --config /src/buildgrid-remote.conf \
+            --max-jobs 4 --fetchers 8" \
+          just bst build "$BST_TARGET"
+
+      # ── Export OCI image ─────────────────────────────────────────────
+      - name: Export OCI image
+        run: |
+          mkdir -p /tmp/oci-export
+          BST_FLAGS="--no-interactive" just bst artifact checkout \
+            "$BST_TARGET" --directory /tmp/oci-export
+
+      - name: Log in to GHCR
+        if: ${{ github.event_name != 'pull_request' && (github.event.inputs.push_image != 'false') }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to GHCR
+        if: ${{ github.event_name != 'pull_request' && (github.event.inputs.push_image != 'false') }}
+        run: |
+          IMAGE_TAG="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}"
+          DATE_TAG=$(date -u +%Y%m%d)
+
+          # skopeo copies OCI directory layout → GHCR
+          skopeo copy \
+            oci:/tmp/oci-export \
+            "docker://${IMAGE_TAG}:${DATE_TAG}"
+
+          skopeo copy \
+            oci:/tmp/oci-export \
+            "docker://${IMAGE_TAG}:latest"
+
+          echo "Pushed ${IMAGE_TAG}:${DATE_TAG}"
+          echo "Pushed ${IMAGE_TAG}:latest"
+
+      # ── Summary ──────────────────────────────────────────────────────
+      - name: Build summary
+        if: always()
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target**: \`$BST_TARGET\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **BuildGrid**: \`$BUILDGRID_ENDPOINT\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
