@@ -68,7 +68,7 @@ jobs:
           restore-keys: bst-sources-aurora-
 
       - name: Pull bst2 image
-        run: docker pull "$BST2_IMAGE"
+        run: podman pull "$BST2_IMAGE"
 
       # ── Write BuildGrid remote execution config ──────────────────────
       - name: Write BuildGrid config
