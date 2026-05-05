@@ -4,7 +4,7 @@ default:
     @just --list
 
 # ── Configuration ─────────────────────────────────────────────────────
-export image_name := env("BUILD_IMAGE_NAME", "aurora")
+export image_name := env("BUILD_IMAGE_NAME", "tromso")
 export image_tag := env("BUILD_IMAGE_TAG", "latest")
 export base_dir := env("BUILD_BASE_DIR", ".")
 export filesystem := env("BUILD_FILESYSTEM", "ext4")
@@ -23,8 +23,8 @@ export OCI_IMAGE_VERSION := env("OCI_IMAGE_VERSION", "latest")
 
 # ── BuildStream wrapper ──────────────────────────────────────────────
 # Runs any bst command inside the bst2 container via podman.
-# Usage: just bst build oci/aurora.bst
-#        just bst show oci/aurora.bst
+# Usage: just bst build oci/tromso.bst
+#        just bst show oci/tromso.bst
 [group('dev')]
 bst *ARGS:
     #!/usr/bin/env bash
@@ -45,13 +45,13 @@ bst *ARGS:
 
 # ── BuildStream via systemd-nspawn (experimental) ──────────────────────
 # Run bst2 in systemd-nspawn container instead of podman (less restrictive networking)
-# Usage: just bst-nspawn build oci/aurora.bst
+# Usage: just bst-nspawn build oci/tromso.bst
 [group('dev')]
 bst-nspawn *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "${HOME}/.cache/buildstream" "${HOME}/.cargo"
-    LOG=/tmp/aurora-build.log
+    LOG=/tmp/tromso-build.log
 
     # Extract bst2 OCI image to temporary directory
     echo "==> Extracting bst2 container image..." | tee -a "$LOG"
@@ -81,12 +81,12 @@ bst-nspawn *ARGS:
     exit $BST_EXIT
 
 # ── Build log ─────────────────────────────────────────────────────────
-# Run build in background, log to /tmp/aurora-build.log, tail it
+# Run build in background, log to /tmp/tromso-build.log, tail it
 [group('build')]
 bst-build *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
-    LOG=/tmp/aurora-build.log
+    LOG=/tmp/tromso-build.log
 
     # Clear old log to keep only the most recent run
     if [ -f "$LOG" ]; then
@@ -100,15 +100,15 @@ bst-build *ARGS:
     # When invoked with stdout/stderr redirected, write directly to LOG and don't tail
     # (tailing the same file we write to creates an exponential feedback loop).
     if [ -t 1 ]; then
-        just bst build ${ARGS:-oci/aurora.bst} 2>&1 | tee -a "$LOG"
+        just bst build ${ARGS:-oci/tromso.bst} 2>&1 | tee -a "$LOG"
     else
         echo "Non-interactive: writing directly to $LOG (no tail)" >&2
-        just bst build ${ARGS:-oci/aurora.bst} >> "$LOG" 2>&1
+        just bst build ${ARGS:-oci/tromso.bst} >> "$LOG" 2>&1
     fi
 
 [group('build')]
 log:
-    tail -f /tmp/aurora-build.log
+    tail -f /tmp/tromso-build.log
 
 # Launch live HTML build dashboard at http://localhost:8765
 # Downloads bst-dashboard.py from GitHub on first run; cached at ~/.cache/bst-dashboard/
@@ -124,8 +124,8 @@ dashboard:
             -o "$SCRIPT"
     fi
     python3 "$SCRIPT" \
-        --log /tmp/aurora-build.log \
-        --target oci/aurora.bst \
+        --log /tmp/tromso-build.log \
+        --target oci/tromso.bst \
         --project "{{justfile_directory()}}" &>/tmp/bst-dashboard.log &
     disown
     echo "Dashboard starting (log: /tmp/bst-dashboard.log)"
@@ -183,8 +183,8 @@ dashboard-service:
 build:
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "==> Building Aurora OCI image with BuildStream..."
-    just bst build oci/aurora.bst
+    echo "==> Building Aurora Tromso OCI image with BuildStream..."
+    just bst build oci/tromso.bst
     just export
 
 # ── Export ─────────────────────────────────────────────────────────────
@@ -196,9 +196,9 @@ export:
     if [ "$(id -u)" -ne 0 ]; then
         SUDO_CMD="sudo"
     fi
-    echo "==> Exporting Aurora OCI image..."
+    echo "==> Exporting Aurora Tromso OCI image..."
     rm -rf .build-out
-    just bst artifact checkout oci/aurora.bst --directory /src/.build-out
+    just bst artifact checkout oci/tromso.bst --directory /src/.build-out
     echo "==> Loading and squashing OCI image..."
     IMAGE_ID=$($SUDO_CMD podman pull -q oci:.build-out)
     rm -rf .build-out
@@ -260,43 +260,43 @@ generate-bootable-image $base_dir=base_dir $filesystem=filesystem:
 
     echo "==> Manually installing systemd-boot EFI files..."
     LOOP=$(sudo losetup -f --show -P "${base_dir}/bootable.raw")
-    sudo mkdir -p /mnt/aurora-efi /mnt/aurora-root-efi
-    sudo mount "${LOOP}p2" /mnt/aurora-efi
-    sudo mount "${LOOP}p3" /mnt/aurora-root-efi
-    SYSROOT=$(ls -d /mnt/aurora-root-efi/ostree/deploy/default/deploy/*.0 2>/dev/null | head -1)
+    sudo mkdir -p /mnt/tromso-efi /mnt/tromso-root-efi
+    sudo mount "${LOOP}p2" /mnt/tromso-efi
+    sudo mount "${LOOP}p3" /mnt/tromso-root-efi
+    SYSROOT=$(ls -d /mnt/tromso-root-efi/ostree/deploy/default/deploy/*.0 2>/dev/null | head -1)
     EFI_SRC="${SYSROOT}/usr/lib/systemd/boot/efi"
-    sudo install -Dm755 "${EFI_SRC}/systemd-bootx64.efi" /mnt/aurora-efi/EFI/systemd/systemd-bootx64.efi
-    sudo install -Dm755 "${EFI_SRC}/systemd-bootx64.efi" /mnt/aurora-efi/EFI/BOOT/BOOTX64.EFI
-    ENTRY=$(ls /mnt/aurora-root-efi/boot/loader.1/entries/ostree-1.conf 2>/dev/null | head -1)
+    sudo install -Dm755 "${EFI_SRC}/systemd-bootx64.efi" /mnt/tromso-efi/EFI/systemd/systemd-bootx64.efi
+    sudo install -Dm755 "${EFI_SRC}/systemd-bootx64.efi" /mnt/tromso-efi/EFI/BOOT/BOOTX64.EFI
+    ENTRY=$(ls /mnt/tromso-root-efi/boot/loader.1/entries/ostree-1.conf 2>/dev/null | head -1)
     if [ -n "$ENTRY" ]; then
         BOOT_OSTREE=$(grep -Po '(?<=initrd )/boot/ostree/[^ ]+' "$ENTRY" | head -1 | xargs dirname)
-        sudo mkdir -p "/mnt/aurora-efi${BOOT_OSTREE}"
-        sudo cp -r "/mnt/aurora-root-efi${BOOT_OSTREE}/." "/mnt/aurora-efi${BOOT_OSTREE}/"
-        sudo mkdir -p /mnt/aurora-efi/loader/entries
-        sudo cp "$ENTRY" /mnt/aurora-efi/loader/entries/
-        echo "timeout 5" | sudo tee /mnt/aurora-efi/loader/loader.conf
+        sudo mkdir -p "/mnt/tromso-efi${BOOT_OSTREE}"
+        sudo cp -r "/mnt/tromso-root-efi${BOOT_OSTREE}/." "/mnt/tromso-efi${BOOT_OSTREE}/"
+        sudo mkdir -p /mnt/tromso-efi/loader/entries
+        sudo cp "$ENTRY" /mnt/tromso-efi/loader/entries/
+        echo "timeout 5" | sudo tee /mnt/tromso-efi/loader/loader.conf
     fi
-    sudo umount /mnt/aurora-efi /mnt/aurora-root-efi
+    sudo umount /mnt/tromso-efi /mnt/tromso-root-efi
     sudo losetup -d "$LOOP"
 
     echo "==> Setting root password and SSH authorized_keys..."
     LOOP2=$(sudo losetup -f --show -P "${base_dir}/bootable.raw")
-    sudo mkdir -p /mnt/aurora-root-setup
-    sudo mount "${LOOP2}p3" /mnt/aurora-root-setup
-    DEPLOY2=$(ls -d /mnt/aurora-root-setup/ostree/deploy/default/deploy/*.0 2>/dev/null | head -1)
+    sudo mkdir -p /mnt/tromso-root-setup
+    sudo mount "${LOOP2}p3" /mnt/tromso-root-setup
+    DEPLOY2=$(ls -d /mnt/tromso-root-setup/ostree/deploy/default/deploy/*.0 2>/dev/null | head -1)
     # Set root password (hash for 'aurora') in the deploy root
     ROOT_HASH=$(openssl passwd -6 'aurora')
     sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "${DEPLOY2}/etc/shadow"
     # authorized_keys: write to the ostree live var (ostree/deploy/default/var/),
     # which is what /var maps to at runtime via bind mount — NOT the deploy
     # checkout's var/ (which is read-only and not mounted as /var).
-    VAR_ROOT="/mnt/aurora-root-setup/ostree/deploy/default/var/roothome"
+    VAR_ROOT="/mnt/tromso-root-setup/ostree/deploy/default/var/roothome"
     if [ -f "${HOME}/.ssh/id_ed25519.pub" ]; then
         sudo install -Dm600 -o root -g root "${HOME}/.ssh/id_ed25519.pub" "${VAR_ROOT}/.ssh/authorized_keys"
         sudo chmod 700 "${VAR_ROOT}/.ssh"
         echo "    SSH authorized_keys installed for root"
     fi
-    sudo umount /mnt/aurora-root-setup
+    sudo umount /mnt/tromso-root-setup
     sudo losetup -d "$LOOP2"
 
     echo "==> Bootable disk image ready: ${base_dir}/bootable.raw"
@@ -340,8 +340,8 @@ boot-vm $base_dir=base_dir:
     echo "==> Booting Aurora in QEMU (background)..."
     echo "    SSH:    ssh -p 2222 -i ~/.ssh/id_ed25519 root@127.0.0.1"
     echo "    Serial: telnet 127.0.0.1 4444"
-    echo "    Logs:   tail -f /tmp/aurora-serial.log"
-    echo "    Stop:   kill \$(cat /tmp/aurora-vm.pid)"
+    echo "    Logs:   tail -f /tmp/tromso-serial.log"
+    echo "    Stop:   kill \$(cat /tmp/tromso-vm.pid)"
     QEMU_BIN=""
     for candidate in qemu-system-x86_64 /usr/libexec/qemu-kvm; do
         if command -v "$candidate" &>/dev/null || [ -x "$candidate" ]; then
@@ -365,7 +365,7 @@ boot-vm $base_dir=base_dir:
         -serial telnet:127.0.0.1:4444,server,nowait \
         -display none \
         -daemonize \
-        -pidfile /tmp/aurora-vm.pid
+        -pidfile /tmp/tromso-vm.pid
 
 # ── Chunkah ──────────────────────────────────────────────────────────
 chunkify image_ref:

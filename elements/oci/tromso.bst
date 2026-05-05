@@ -123,12 +123,12 @@ config:
         parent:
           image: /parent
         layer: /layer
-        comment: "Aurora KDE Linux (layered on KDE Linux OS)"
+        comment: "Aurora Tromso - KDE Plasma desktop (layered on KDE Linux)"
         config:
           Labels:
             'com.github.containers.toolbox': 'true'
-            'org.opencontainers.image.title': 'Aurora'
-            'org.opencontainers.image.description': 'Aurora KDE Plasma desktop, layered on KDE Linux'
+            'org.opencontainers.image.title': 'Aurora Tromso'
+            'org.opencontainers.image.description': 'Aurora Tromso KDE Plasma desktop, layered on KDE Linux'
             'org.opencontainers.image.vendor': 'Hanthor'
             'org.opencontainers.image.licenses': 'Apache-2.0'
             'org.opencontainers.image.url': 'https://github.com/hanthor/tromso'

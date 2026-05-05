@@ -15,7 +15,7 @@ environment:
   IMAGE_TAG: "latest"
   VERSION_ID: "0"
   IMAGE_VERSION: "0"
-  IMAGE_PRETTY_NAME: "Aurora"
+  IMAGE_PRETTY_NAME: "Aurora Tromso"
   HOME_URL: "https://github.com/hanthor/tromso"
   DOCUMENTATION_URL: "https://github.com/hanthor/tromso"
   SUPPORT_URL: "https://github.com/hanthor/tromso/issues"

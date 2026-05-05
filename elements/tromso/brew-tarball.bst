@@ -15,7 +15,7 @@ build-depends:
 - kde-build-meta.bst:freedesktop-sdk.bst:public-stacks/runtime-minimal.bst
 
 runtime-depends:
-- aurora/brew.bst
+- tromso/brew.bst
 
 variables:
   strip-binaries: ""
