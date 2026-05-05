@@ -217,7 +217,11 @@ export:
         | $SUDO_CMD podman build --pull=never --security-opt label=type:unconfined_t ${LABEL_ARGS} -t "{{image_name}}:{{image_tag}}" -f - .
     $SUDO_CMD podman rmi "$IMAGE_ID" || true
     echo "==> Export complete: {{image_name}}:{{image_tag}}"
-    just chunkify "{{image_name}}:{{image_tag}}"
+    # Chunkify optimises the image for ostree/composefs distribution but may
+    # fail if the overlay diff layer contains whiteout char devices (issue #20).
+    # Treat it as non-fatal so GHCR push succeeds even if chunking is skipped.
+    just chunkify "{{image_name}}:{{image_tag}}" || \
+        echo "==> Warning: chunkify failed (see issue #20); image will be pushed unchunked"
 
 # ── Clean ─────────────────────────────────────────────────────────────
 [group('build')]
