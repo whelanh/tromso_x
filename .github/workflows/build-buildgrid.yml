@@ -25,7 +25,7 @@ env:
   IMAGE_NAME: aurora
   IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
   BST_TARGET: oci/aurora.bst
-  BST2_IMAGE: registry.gitlab.com/freedesktop-sdk/infrastructure/freedesktop-sdk-docker-images/bst2:f89b4aef847ef040b345acceda15a850219eb8f1
+  BST2_IMAGE: registry.gitlab.com/freedesktop-sdk/infrastructure/freedesktop-sdk-docker-images/bst2:latest
   BUILDGRID_ENDPOINT: grpc://buildgrid.manatee-basking.ts.net:50051
 
 concurrency:
