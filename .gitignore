@@ -19,3 +19,4 @@ ostree-export/
 qtbase-contents/
 aurora-rootfs*
 bootable*
+nohup.out

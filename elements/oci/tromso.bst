@@ -10,7 +10,7 @@ build-depends:
   - filename: kde-build-meta.bst:oci/kde-linux/image.bst
     config:
       location: /parent
-  - filename: oci/layers/aurora.bst
+  - filename: oci/layers/tromso.bst
     config:
       location: /layer
 

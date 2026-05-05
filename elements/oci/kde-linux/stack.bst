@@ -8,23 +8,23 @@ depends:
 - kde-build-meta.bst:kde/deps.bst
 
 # OS-related config (reused from gnomeos, not KDE-specific)
-- kde-build-meta.bst:gnomeos/fwupd-efi-signed-maybe.bst
-- kde-build-meta.bst:gnomeos/import-deployment-pub-key.bst
-- kde-build-meta.bst:gnomeos/public-keys.bst
-- kde-build-meta.bst:gnomeos/reload-sysext.bst
-- kde-build-meta.bst:gnomeos/replace-signed-systemd-boot.bst
-- kde-build-meta.bst:gnomeos/systemd-pcrlock-workaround.bst
+- kde-build-meta.bst:kde-linux-system/fwupd-efi-signed-maybe.bst
+- kde-build-meta.bst:kde-linux-system/import-deployment-pub-key.bst
+- kde-build-meta.bst:kde-linux-system/public-keys.bst
+- kde-build-meta.bst:kde-linux-system/reload-sysext.bst
+- kde-build-meta.bst:kde-linux-system/replace-signed-systemd-boot.bst
+- kde-build-meta.bst:kde-linux-system/systemd-pcrlock-workaround.bst
 
 # Add the kernel
 - kde-build-meta.bst:freedesktop-sdk.bst:components/linux.bst
 - kde-build-meta.bst:freedesktop-sdk.bst:components/linux-firmware.bst
 - kde-build-meta.bst:freedesktop-sdk.bst:components/systemd.bst
 - kde-build-meta.bst:freedesktop-sdk.bst:bootstrap/libselinux.bst
-- kde-build-meta.bst:gnomeos/initramfs/signed-modules.bst
+- kde-build-meta.bst:kde-linux-system/initramfs/signed-modules.bst
 - kde-build-meta.bst:oci/initramfs.bst
 
 # bootc for image-based updates
-- kde-build-meta.bst:gnomeos-deps/bootc.bst
+- kde-build-meta.bst:kde-linux-deps/bootc.bst
 - kde-build-meta.bst:oci/integration/bootc-config.bst
 - kde-build-meta.bst:freedesktop-sdk.bst:components/ostree.bst
 - kde-build-meta.bst:freedesktop-sdk.bst:components/composefs.bst

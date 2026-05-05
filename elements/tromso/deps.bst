@@ -40,8 +40,8 @@ depends:
 
   # Fonts for SDDM and desktop text rendering. These were previously added in
   # 89d117f0a to fix tofu boxes in the graphical stack.
-  - kde-build-meta.bst:gnomeos-deps/noto-fonts.bst
-  - kde-build-meta.bst:gnomeos-deps/noto-cjk.bst
+  - kde-build-meta.bst:kde-linux-deps/noto-fonts.bst
+  - kde-build-meta.bst:kde-linux-deps/noto-cjk.bst
   - kde-build-meta.bst:freedesktop-sdk.bst:components/dejavu-fonts.bst
   - kde-build-meta.bst:freedesktop-sdk.bst:components/liberation-fonts.bst
   - kde-build-meta.bst:freedesktop-sdk.bst:components/noto-emoji.bst
@@ -56,6 +56,6 @@ depends:
   - kde-build-meta.bst:freedesktop-sdk.bst:components/bpf.bst
   - kde-build-meta.bst:freedesktop-sdk.bst:components/vmlinuxh.bst
   - kde-build-meta.bst:core/sysprof-app.bst
-  - kde-build-meta.bst:gnomeos-deps/just.bst
+  - kde-build-meta.bst:kde-linux-deps/just.bst
   # Dakota uses sudo-rs to preserve the setuid sudo binary in the final image.
   - tromso/sudo-rs.bst
