@@ -43,8 +43,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: true
+
+      - name: Checkout kde-build-meta-local
+        run: |
+          git clone --no-recurse-submodules https://github.com/hanthor/kde-build-meta.git kde-build-meta-local
+          git -C kde-build-meta-local checkout 8f9ee37a72f73098375d27541fc07f567a58ff5b
 
       - name: Setup Just
         uses: extractions/setup-just@v4
