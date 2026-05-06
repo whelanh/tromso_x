@@ -47,6 +47,21 @@ jobs:
           echo "=== Disk space ==="
           df -h /
 
+      - name: Create XFS loopback for large build workspace
+        # VFS OCI import and squashfs assembly need ~40GB.
+        # Mount a 45GB XFS loopback at /mnt; XFS handles VFS's many small
+        # directories far faster than ext4. Idempotent if /mnt is already XFS.
+        run: |
+          if ! findmnt -n -o FSTYPE /mnt 2>/dev/null | grep -q '^xfs$'; then
+            echo "Creating 45G XFS loopback at /mnt..."
+            IMG="/var/tmp/tromso-xfs-loopback.img"
+            sudo truncate -s 0 "${IMG}"
+            sudo fallocate -l 45G "${IMG}"
+            sudo mkfs.xfs -f "${IMG}"
+            sudo mount -o loop "${IMG}" /mnt
+          fi
+          df -h /mnt
+
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
@@ -62,10 +77,12 @@ jobs:
           INSTALLER_CHANNEL="${{ inputs.installer_channel || 'stable' }}"
           DEBUG_FLAG="${{ inputs.debug == true && '1' || '0' }}"
           sudo mkdir -p /var/iso-build
+          sudo chown "$USER:$(id -gn)" /mnt
           sudo $(command -v just) \
             installer_channel=${INSTALLER_CHANNEL} \
             debug=${DEBUG_FLAG} \
             output_dir=/var/iso-build \
+            workdir=/mnt \
             iso-sd-boot tromso
           mkdir -p output
           sudo cp /var/iso-build/*.iso output/ 2>/dev/null || true
@@ -96,11 +113,15 @@ jobs:
           echo "==> Booting $ISO ..."
 
           EFI_CODE=""
-          for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd; do
+          for f in /usr/share/OVMF/OVMF_CODE_4M.fd \
+                   /usr/share/OVMF/OVMF_CODE.fd \
+                   /usr/share/edk2/ovmf/OVMF_CODE.fd; do
             [ -f "$f" ] && EFI_CODE="$f" && break
           done
           EFI_VARS=""
-          for f in /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd; do
+          for f in /usr/share/OVMF/OVMF_VARS_4M.fd \
+                   /usr/share/OVMF/OVMF_VARS.fd \
+                   /usr/share/edk2/ovmf/OVMF_VARS.fd; do
             if [ -f "$f" ]; then
               cp "$f" /tmp/EFI_VARS.fd
               EFI_VARS="/tmp/EFI_VARS.fd"
@@ -186,22 +207,26 @@ jobs:
           TAG="${{ steps.iso.outputs.tag }}"
           DATE=$(date -u +%Y-%m-%d)
 
+          cat > /tmp/release-notes.md << NOTESEOF
+          Automated Tromso KDE Linux live ISO build.
+
+          Built from commit \`${{ github.sha }}\` on ${DATE}.
+
+          ## Installation
+          1. Write the ISO to a USB drive with [Impression](https://flathub.org/apps/io.gitlab.adhami3310.Impression) or \`dd\`
+          2. Boot from USB
+          3. Run the **Tromso Installer** from the taskbar
+          4. Select your disk and install
+
+          ## Verification
+          \`\`\`
+          sha256sum -c ${DATED}-CHECKSUM
+          \`\`\`
+          NOTESEOF
+
           gh release create "${TAG}" \
             --title "Tromso Live ISO ${DATE}" \
-            --notes "Automated Tromso KDE Linux live ISO build.
-
-Built from commit \`${{ github.sha }}\` on ${DATE}.
-
-## Installation
-1. Write the ISO to a USB drive with [Impression](https://flathub.org/apps/io.gitlab.adhami3310.Impression) or \`dd\`
-2. Boot from USB
-3. Run the **Tromso Installer** from the taskbar
-4. Select your disk and install
-
-## Verification
-\`\`\`
-sha256sum -c ${DATED}-CHECKSUM
-\`\`\`" \
+            --notes-file /tmp/release-notes.md \
             --latest \
             "${ISO}#${DATED}" \
             "output/${DATED}-CHECKSUM#${DATED}-CHECKSUM" || \
