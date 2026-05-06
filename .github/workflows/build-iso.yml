@@ -1,0 +1,211 @@
+name: Build and Publish Tromso Live ISO
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tromso/**'
+      - 'justfile'
+      - '.github/workflows/build-iso.yml'
+  schedule:
+    # Rebuild daily at 05:00 UTC to pick up Tromso image updates
+    - cron: '0 5 * * *'
+  repository_dispatch:
+    types: [oci-image-published]
+  workflow_dispatch:
+    inputs:
+      installer_channel:
+        description: 'Installer channel (stable or dev)'
+        required: false
+        default: stable
+        type: string
+      debug:
+        description: 'Build debug ISO (SSH enabled, faster)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build-and-publish:
+    name: Build Tromso Live ISO
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
+        with:
+          tool-cache: true
+
+      - name: Disk space after free
+        run: |
+          echo "=== Disk space ==="
+          df -h /
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y just podman buildah mtools xorriso skopeo
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            sudo podman login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build Live ISO
+        run: |
+          INSTALLER_CHANNEL="${{ inputs.installer_channel || 'stable' }}"
+          DEBUG_FLAG="${{ inputs.debug == true && '1' || '0' }}"
+          sudo mkdir -p /var/iso-build
+          sudo $(command -v just) \
+            installer_channel=${INSTALLER_CHANNEL} \
+            debug=${DEBUG_FLAG} \
+            output_dir=/var/iso-build \
+            iso-sd-boot tromso
+          mkdir -p output
+          sudo cp /var/iso-build/*.iso output/ 2>/dev/null || true
+          sudo chown -R "$USER:$(id -gn)" output/
+
+      - name: Compute ISO name
+        id: iso
+        run: |
+          DATE=$(date -u +%Y%m%d)
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "dated=tromso-live-${DATE}-${SHA}.iso" >> "$GITHUB_OUTPUT"
+          echo "path=output/tromso-live.iso" >> "$GITHUB_OUTPUT"
+          echo "tag=iso-${DATE}-${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate SHA256 checksum
+        run: |
+          ISO="${{ steps.iso.outputs.path }}"
+          DATED="${{ steps.iso.outputs.dated }}"
+          sha256sum "$ISO" | sed "s|${ISO}|${DATED}|" > output/${DATED}-CHECKSUM
+          cat output/${DATED}-CHECKSUM
+
+      - name: Boot verification (UEFI + serial)
+        timeout-minutes: 10
+        run: |
+          ISO="${{ steps.iso.outputs.path }}"
+          sudo apt-get install -y qemu-system-x86 ovmf socat imagemagick -qq
+
+          echo "==> Booting $ISO ..."
+
+          EFI_CODE=""
+          for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd; do
+            [ -f "$f" ] && EFI_CODE="$f" && break
+          done
+          EFI_VARS=""
+          for f in /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd; do
+            if [ -f "$f" ]; then
+              cp "$f" /tmp/EFI_VARS.fd
+              EFI_VARS="/tmp/EFI_VARS.fd"
+              break
+            fi
+          done
+
+          PFLASH=()
+          if [ -n "$EFI_CODE" ] && [ -n "$EFI_VARS" ]; then
+            PFLASH+=(-drive "if=pflash,format=raw,readonly=on,file=$EFI_CODE")
+            PFLASH+=(-drive "if=pflash,format=raw,file=$EFI_VARS")
+          fi
+
+          sudo qemu-system-x86_64 \
+            -machine type=q35,accel=kvm \
+            -cpu host -m 4G -smp 2 \
+            "${PFLASH[@]}" \
+            -cdrom "$ISO" -boot d \
+            -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
+            -serial file:/tmp/serial.log \
+            -display none \
+            -daemonize
+
+          for i in $(seq 1 30); do
+            [ -S /tmp/qemu-monitor.sock ] && break
+            sleep 2
+          done
+
+          echo "==> Waiting up to 5 minutes for live environment..."
+          for i in $(seq 1 60); do
+            if sudo grep -q "TROMSO_LIVE_READY" /tmp/serial.log 2>/dev/null; then
+              echo "==> Live environment ready after $((i * 5))s"
+              break
+            fi
+            [ "$i" -eq 60 ] && echo "WARNING: TROMSO_LIVE_READY not seen after 5m" || true
+            sleep 5
+          done
+
+          echo "screendump /tmp/screenshot.ppm" | \
+            sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock || true
+          sleep 2
+          if sudo test -f /tmp/screenshot.ppm; then
+            sudo convert /tmp/screenshot.ppm screenshot.png 2>/dev/null || \
+              sudo cp /tmp/screenshot.ppm screenshot.png
+          fi
+
+          echo "quit" | sudo socat - UNIX-CONNECT:/tmp/qemu-monitor.sock || true
+
+          sudo grep -qE "TROMSO_LIVE_READY|Finished live-ready\.service" /tmp/serial.log || \
+            { echo "ERROR: Live environment did not reach ready state"; sudo tail -50 /tmp/serial.log; exit 1; }
+
+      - name: Upload ISO as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.iso.outputs.dated }}
+          path: ${{ steps.iso.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload checksum as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksum-${{ steps.iso.outputs.dated }}
+          path: output/${{ steps.iso.outputs.dated }}-CHECKSUM
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload boot screenshot
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boot-screenshot
+          path: screenshot.png
+          if-no-files-found: warn
+
+      - name: Publish GitHub Release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISO="${{ steps.iso.outputs.path }}"
+          DATED="${{ steps.iso.outputs.dated }}"
+          TAG="${{ steps.iso.outputs.tag }}"
+          DATE=$(date -u +%Y-%m-%d)
+
+          gh release create "${TAG}" \
+            --title "Tromso Live ISO ${DATE}" \
+            --notes "Automated Tromso KDE Linux live ISO build.
+
+Built from commit \`${{ github.sha }}\` on ${DATE}.
+
+## Installation
+1. Write the ISO to a USB drive with [Impression](https://flathub.org/apps/io.gitlab.adhami3310.Impression) or \`dd\`
+2. Boot from USB
+3. Run the **Tromso Installer** from the taskbar
+4. Select your disk and install
+
+## Verification
+\`\`\`
+sha256sum -c ${DATED}-CHECKSUM
+\`\`\`" \
+            --latest \
+            "${ISO}#${DATED}" \
+            "output/${DATED}-CHECKSUM#${DATED}-CHECKSUM" || \
+          gh release upload "${TAG}" \
+            "${ISO}#${DATED}" \
+            "output/${DATED}-CHECKSUM#${DATED}-CHECKSUM" \
+            --clobber
