@@ -3,23 +3,22 @@
 # Build with:
 #   just container tromso
 #
-# Three-stage build:
-#   1. tromso-ref        — original Tromso image (provides kernel modules)
-#   2. initramfs-builder — Debian: builds a dmsquash-live initramfs against
+# Two-stage build:
+#   1. initramfs-builder — Debian: builds a dmsquash-live initramfs against
 #                          Tromso's kernel modules in its native glibc environment
-#   3. final             — Tromso: receives the rebuilt initramfs + live-env setup
+#   2. final             — Tromso: receives the rebuilt initramfs + live-env setup
 #
 # Tromso is freedesktop-sdk based — no package manager, no dracut.
 # The initramfs is built in a separate Debian stage so no cross-distro binary
 # grafting is needed; only the initramfs.img output crosses the stage boundary.
 # The ISO bootloader is systemd-boot (already in the image at
 # /usr/lib/systemd/boot/efi/systemd-bootx64.efi) — no GRUB2 or shim required.
+#
+# Branding (hicolor icons, Plymouth watermark, SDDM logo, pixmaps) is embedded
+# in the base Tromso image by elements/tromso/logos.bst — no separate brand OCI
+# is needed.
 
 ARG BASE_IMAGE=ghcr.io/hanthor/tromso:latest
-ARG BRAND_IMAGE=ghcr.io/hanthor/tromso-brand:latest
-
-# ── Stage 0: Branding OCI (icons, Plymouth watermark, installer welcome) ─────
-FROM ${BRAND_IMAGE} AS brand
 
 # ── Stage 1: Tromso reference (kernel modules source) ────────────────────────
 FROM ${BASE_IMAGE} AS tromso-ref
@@ -63,11 +62,10 @@ RUN kernel=$(ls /usr/lib/modules | sort -V | tail -1) && \
     mv /tmp/initramfs.img "/usr/lib/modules/${kernel}/initramfs.img" && \
     echo "Replaced initramfs for kernel ${kernel}"
 
-# ── Branding layer (from hanthor/tromso-brand OCI) ───────────────────────────
-# Installs icons, pixmaps, Plymouth watermark, and installer welcome image.
-# /logos/ maps directly onto /usr/ so COPY --from=brand /logos/ /usr/ works.
-COPY --from=brand /logos/     /usr/
-COPY --from=brand /iso_files/usr/ /usr/
+# ── Branding (welcome image for installer tour) ───────────────────────────────
+# Icons, pixmaps, and Plymouth watermark are already embedded in the base Tromso
+# image by logos.bst.  Only the ISO-specific installer welcome slide lives here.
+COPY src/images/tromso-welcome.png /usr/share/bootc-installer/images/tromso-welcome.png
 RUN gtk-update-icon-cache /usr/share/icons/hicolor/ 2>/dev/null || true
 
 # ── Flatpak install layer ─────────────────────────────────────────────────────
