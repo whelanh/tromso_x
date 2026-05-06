@@ -1,24 +1,101 @@
-org.kde.plasma/
-.bst/
+# Build outputs
 *.raw
 *.raw.*
 *.iso
 *.tar.zst
 *.tar.gz
-.ovmf-vars.fd
-AURORA_VM_USAGE.sh
-copilot-session-*.md
-files/
-*.tsv
-*.ppm
 out/
+ostree-export/
+aurora-rootfs*
+bootable*
+qtbase-contents/
+
+# BST / build cache
+.bst/
+.bst2/
+.tmp/
+.build-out-direct/
+.podman-tmp/
+
+# VM / firmware
+.ovmf-vars.fd
+
+# Initramfs working dirs
 initrd-final/
 initrd-abs/
 initrd-deploy/
-ostree-export/
-qtbase-contents/
-aurora-rootfs*
-bootable*
-nohup.out
+initramfs-manual/
+
+# Debug checkouts
+org.kde.plasma/
 kwin-fixed
+kwin-local
 kde/
+patched-repos/
+
+# AI session logs
+.claude/sessions/
+copilot-session-*.md
+nohup.out
+
+# Python
+__pycache__/
+*.pyc
+
+# Local files directory (BST test content, not build inputs)
+files/
+
+# Dev/session artifacts — not part of the build
+AURORA_VM_USAGE.sh
+BUILD_GUIDE.md
+BUILD_PROGRESS.md
+COMPLETED.md
+GITHUB_ISSUES_AND_TODOS.md
+LESSONS_LEARNED_*.md
+NEXT_ACTIONS_*.md
+NEXT_STEPS.md
+PLASMA_*.md
+RECOVERY*.md
+SESSION_*.md
+STATUS.md
+TROUBLESHOOTING.md
+VULKAN_*.md
+state_snapshot.xml
+build-recovery-prompt.txt
+
+# Dev-time scripts
+bst-cache-pull.sh
+bst-cache-push.sh
+bst-dashboard.py
+bst-failure-recovery.py
+bst.yml
+build.sh
+build_monitor.sh
+monitor*.sh
+monitor_loop*.py
+rebuild-with-ssh.sh
+run-build-with-recovery.sh
+toggle-loop.sh
+
+# Old build configs (superseded by project.conf + BuildGrid)
+buildbarn-config*.yaml
+buildbarn-config*.json
+frontend-update.jsonnet
+project-artifacts*.yaml
+junction.refs
+
+# Root-level skill stubs (use .claude/skills/ instead)
+*.skill
+
+# Research/reference caches
+arch-pkgbuilds/
+kde-linux-packages.txt
+patches/
+
+# Old local-build Containerfiles
+Containerfile
+Containerfile-final
+
+# Misc build outputs
+scripts/org.osbuild.bootc.install-to-filesystem
+scripts/parity-check.py
