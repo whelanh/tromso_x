@@ -95,6 +95,13 @@ fi
 echo 'liveuser ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/liveuser
 chmod 0440 /etc/sudoers.d/liveuser
 
+# ── Wayland platform default ──────────────────────────────────────────────────
+# Force Qt applications to the Wayland backend.  Without this, Qt services
+# activated via systemd --user (kded6, powerdevil, etc.) default to XCB and
+# crash with "could not connect to display" when WAYLAND_DISPLAY is not in the
+# systemd environment yet.
+echo 'QT_QPA_PLATFORM=wayland' >> /etc/environment
+
 # ── SDDM autologin — Wayland mode ────────────────────────────────────────────
 # Use the Wayland display server path; Aurora has no Xorg.
 mkdir -p /etc/sddm.conf.d
@@ -134,6 +141,13 @@ POWEREOF
 
 # Mask systemd sleep/suspend targets belt-and-suspenders
 systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+
+# ── Disable kmscon virtual terminals ─────────────────────────────────────────
+# kmsconvt@.service (installed as autovt@.service alias) opens /dev/dri/card0
+# for GPU-accelerated VT rendering, which prevents kwin_wayland from claiming
+# the DRM device.  On a live desktop we do not need kmscon VTs; mask it so
+# regular getty handles text consoles and the DRM device stays free for kwin.
+systemctl mask kmsconvt@.service
 
 # ── /var/tmp tmpfs ────────────────────────────────────────────────────────────
 cat > /usr/lib/systemd/system/var-tmp.mount << 'UNITEOF'
