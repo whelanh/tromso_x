@@ -1,6 +1,9 @@
 kind: cmake
 description: Aurora KCM for Universal Blue image rebasing
 
+environment:
+  LD_LIBRARY_PATH: /usr/lib/x86_64-linux-gnu
+
 build-depends:
 - kde-build-meta.bst:freedesktop-sdk.bst:public-stacks/buildsystem-cmake.bst
 - kde-build-meta.bst:kde/frameworks/extra-cmake-modules.bst
@@ -24,9 +27,6 @@ runtime-depends:
 - kde-build-meta.bst:freedesktop-sdk.bst:components/libnotify.bst
 
 config:
-  configure-commands:
-    (<):
-    - ldconfig
   install-commands:
     (>):
     - |
