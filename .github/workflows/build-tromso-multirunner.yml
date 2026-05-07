@@ -12,7 +12,7 @@ on:
 env:
   IMAGE_NAME: tromso
   IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
-  BST2_IMAGE: registry.gitlab.com/freedesktop-sdk/infrastructure/freedesktop-sdk-docker-images/bst2:f89b4aef847ef040b345acceda15a850219eb8f1
+  BST2_IMAGE: registry.gitlab.com/freedesktop-sdk/infrastructure/freedesktop-sdk-docker-images/bst2:64eb0b4930d57a92710822898fb73af6cc1ae35d
   NUM_CHUNKS: "10"
   CORE_SPLIT: "200"
 
