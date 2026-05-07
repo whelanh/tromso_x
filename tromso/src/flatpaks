@@ -20,8 +20,7 @@ io.gitlab.adhami3310.Impression
 
 # KDE apps not typically in the base image
 org.kde.haruna
-org.kde.merkuro.calendar
-org.kde.merkuro.contact
+org.kde.merkuro
 org.kde.kasts
 org.kde.isoimagewriter
 
