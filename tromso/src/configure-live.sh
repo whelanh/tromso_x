@@ -27,6 +27,12 @@ useradd --create-home --uid 1000 --user-group \
     --comment "Live User" liveuser || true
 passwd --delete liveuser
 
+# Grant liveuser access to DRM devices (needed for kwin_wayland KMS output).
+usermod -aG video,render liveuser
+
+# Restore setuid on sudo — BST artifact assembly strips special permission bits.
+chmod u+s /usr/bin/sudo
+
 # Debug builds only: enable SSH so the live session is reachable for testing.
 if [[ "${DEBUG:-0}" == "1" ]]; then
     echo "liveuser:live" | chpasswd
@@ -44,6 +50,10 @@ PermitEmptyPasswords no
 PasswordAuthentication yes
 PermitRootLogin yes
 SSHEOF
+    # Remove options not supported by this OpenSSH build (prevents sshd startup failure).
+    sed -i '/GSSAPIAuthentication/d' /etc/ssh/sshd_config
+    # Generate host keys (not pre-generated in image to avoid key reuse).
+    ssh-keygen -A
 
     mkdir -p /etc/firewalld/zones
     cat > /etc/firewalld/zones/public.xml << 'FWEOF'
@@ -85,9 +95,14 @@ fi
 echo 'liveuser ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/liveuser
 chmod 0440 /etc/sudoers.d/liveuser
 
-# ── SDDM autologin ────────────────────────────────────────────────────────────
+# ── SDDM autologin — Wayland mode ────────────────────────────────────────────
+# Use the Wayland display server path; Aurora has no Xorg.
 mkdir -p /etc/sddm.conf.d
 cat > /etc/sddm.conf.d/live-autologin.conf << 'SDDMEOF'
+[General]
+DisplayServer=wayland
+CompositorCommand=kwin_wayland --no-lockscreen
+
 [Autologin]
 User=liveuser
 Session=plasma
