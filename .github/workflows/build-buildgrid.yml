@@ -33,8 +33,11 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 360   # GitHub default; explicit so the limit is visible
+    # Use a self-hosted runner if ACTIONS_RUNNER_LABEL repo variable is set
+    # (e.g. "self-hosted"), otherwise fall back to GitHub-hosted ubuntu-24.04.
+    # GitHub-hosted runners are hard-capped at 6 h; self-hosted have no cap.
+    runs-on: ${{ vars.ACTIONS_RUNNER_LABEL || 'ubuntu-24.04' }}
+    timeout-minutes: 720   # 12 h — effective on self-hosted; GH-hosted capped at 6 h
     permissions:
       contents: read
       packages: write
