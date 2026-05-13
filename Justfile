@@ -23,7 +23,7 @@ export OCI_IMAGE_VERSION := env("OCI_IMAGE_VERSION", "latest")
 
 # ── BuildStream wrapper ──────────────────────────────────────────────
 # Runs any bst command inside the bst2 container via podman.
-# Usage: just bst build oci/tromso.bst
+# Usage: BST_FLAGS="--no-interactive " just bst build oci/tromso.bst
 #        just bst show oci/tromso.bst
 [group('dev')]
 bst *ARGS:
@@ -31,7 +31,7 @@ bst *ARGS:
     set -euo pipefail
     mkdir -p "${HOME}/.cache/buildstream" "${HOME}/.cargo" "${HOME}/.config/buildstream"
 
-    podman --cgroup-manager=cgroupfs run --rm \
+    podman --cgroup-manager=cgroupfs run --rm --security-opt label=type:unconfined_t \
         --privileged \
         --device /dev/fuse \
         --network=host \
@@ -100,10 +100,10 @@ bst-build *ARGS:
     # When invoked with stdout/stderr redirected, write directly to LOG and don't tail
     # (tailing the same file we write to creates an exponential feedback loop).
     if [ -t 1 ]; then
-        just bst build ${ARGS:-oci/tromso.bst} 2>&1 | tee -a "$LOG"
+        BST_FLAGS="--no-interactive " just bst build ${ARGS:-oci/tromso.bst} 2>&1 | tee -a "$LOG"
     else
         echo "Non-interactive: writing directly to $LOG (no tail)" >&2
-        just bst build ${ARGS:-oci/tromso.bst} >> "$LOG" 2>&1
+        BST_FLAGS="--no-interactive " just bst build ${ARGS:-oci/tromso.bst} >> "$LOG" 2>&1
     fi
 
 [group('build')]
@@ -184,7 +184,7 @@ build:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "==> Building Aurora Tromso OCI image with BuildStream..."
-    just bst build oci/tromso.bst
+    BST_FLAGS="--no-interactive " just bst build oci/tromso.bst
     just export
 
 # ── Export ─────────────────────────────────────────────────────────────
@@ -385,9 +385,19 @@ chunkify image_ref:
     CONFIG=$($SUDO_CMD podman inspect "{{image_ref}}")
 
     FAKECAP_RESTORE="{{justfile_directory()}}/files/fakecap/fakecap-restore"
+    FAKECAP_RESTORE_SRC="{{justfile_directory()}}/files/fakecap/fakecap-restore.c"
+    FAKECAP_MANIFEST="{{justfile_directory()}}/files/fakecap-manifest.tsv"
+
+    # Tromso doesn't currently version Dakota's generated fakecap manifest.
+    # Skip chunkifying when those inputs are absent so `just build` still succeeds.
+    if [ ! -f "$FAKECAP_RESTORE_SRC" ] || [ ! -f "$FAKECAP_MANIFEST" ]; then
+        echo "==> Skipping chunkify: missing fakecap inputs ($FAKECAP_RESTORE_SRC, $FAKECAP_MANIFEST)."
+        exit 0
+    fi
+
     if [ ! -x "$FAKECAP_RESTORE" ]; then
         echo "==> Compiling fakecap-restore..."
-        gcc -O2 -o "$FAKECAP_RESTORE" "{{justfile_directory()}}/files/fakecap/fakecap-restore.c"
+        gcc -O2 -o "$FAKECAP_RESTORE" "$FAKECAP_RESTORE_SRC"
     fi
 
     LOWER=$($SUDO_CMD podman image mount "{{image_ref}}")
@@ -399,16 +409,16 @@ chunkify image_ref:
     }
     trap cleanup EXIT
 
-    UPPER=$(mktemp -d -p /tmp)
-    WORK=$(mktemp -d -p /tmp)
-    MERGED=$(mktemp -d -p /tmp)
+    UPPER=$(mktemp -d -p /var/tmp)
+    WORK=$(mktemp -d -p /var/tmp)
+    MERGED=$(mktemp -d -p /var/tmp)
     $SUDO_CMD chmod 755 "$UPPER" "$WORK" "$MERGED"
     $SUDO_CMD mount -t overlay overlay \
         -o "lowerdir=${LOWER},upperdir=${UPPER},workdir=${WORK}" \
         "$MERGED"
 
     echo "==> Applying user.component xattrs via fakecap-restore..."
-    $SUDO_CMD "$FAKECAP_RESTORE" files/fakecap-manifest.tsv "$MERGED"
+    $SUDO_CMD "$FAKECAP_RESTORE" "$FAKECAP_MANIFEST" "$MERGED"
 
     CHUNKAH_REF="quay.io/coreos/chunkah@sha256:306371251e61cc870c8546e225b13bdf2e333f79461dc5e0fc280cc170cee070"
     for attempt in 1 2 3; do
@@ -438,4 +448,3 @@ chunkify image_ref:
         echo "==> Retagging chunked image to {{image_ref}}..."
         $SUDO_CMD podman tag "$NEW_REF" "{{image_ref}}"
     fi
-

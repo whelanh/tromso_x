@@ -92,8 +92,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/buildstream/sources
-          key: bst-sources-tromso-${{ hashFiles('elements/**/*.bst') }}
-          restore-keys: bst-sources-tromso-
+          key: bst-sources-tromso-v2-${{ hashFiles('elements/**/*.bst') }}
+          restore-keys: bst-sources-tromso-v2-
 
       # ── Write BuildGrid remote execution config ──────────────────────
       - name: Write BuildGrid config
