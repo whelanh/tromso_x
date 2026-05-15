@@ -76,10 +76,10 @@ ssh -p 2222 root@localhost
 | `just boot-vm` | Boot the raw image in QEMU (SSH on port 2222, serial on 4444) |
 | `just bst <args>` | Run any arbitrary `bst` command inside the build container |
 
-## CI/CD — BuildGrid
+## CI/CD — CASD
 
-The CI workflow (`.github/workflows/build-buildgrid.yml`) builds `oci/tromso.bst` on a home
-BuildGrid cluster via Tailscale, then pushes the result to GHCR:
+The CI workflow (`.github/workflows/build-buildgrid.yml`) builds `oci/tromso.bst` with
+local CASD on the runner, then pushes the result to GHCR:
 
 ```
 ghcr.io/hanthor/tromso:latest
@@ -88,13 +88,11 @@ ghcr.io/hanthor/tromso:<git-sha>
 ```
 
 **How it works:**
-1. GitHub Actions runner joins the home network via Tailscale OAuth
-2. BuildStream submits build jobs to BuildGrid (remote execution over gRPC)
-3. BuildGrid compiles all elements on the home cluster, caching artifacts
-4. Completed artifacts are exported as an OCI image and pushed to GHCR
+1. GitHub Actions runs BuildStream inside the pinned `bst2` container
+2. BuildStream uses local CASD (`~/.cache/buildstream`) with CI-tuned scheduler settings
+3. The built target is exported as an OCI image and pushed to GHCR
 
-**Cold builds** (no artifacts cached) take multiple runs — each run pushes newly-built artifacts
-to the BuildGrid artifact cache. Subsequent runs pull those from cache and only build what remains.
+**Cold builds** (empty CASD cache on the runner) are slower; warm runner caches significantly reduce runtime.
 
 Triggers: push to `main` (element changes), daily at 06:00 UTC, manual dispatch.
 

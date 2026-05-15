@@ -177,10 +177,9 @@ git push origin main
 
 ```
 GitHub Actions runner
-  → Tailscale OAuth join (home network)
-  → BuildGrid reachability check
+  → Generate CI BuildStream config
   → bst2 container pull (pinned image SHA)
-  → just bst build oci/tromso.bst     (submits to BuildGrid)
+  → just bst build oci/tromso.bst     (local CASD build)
   → just export                        (exports OCI tarball)
   → skopeo push ghcr.io/hanthor/tromso:latest
 ```

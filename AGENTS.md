@@ -177,7 +177,35 @@ Pattern — if upstream `CMakeLists.txt` has `find_package(KF6Foo REQUIRED)`, th
   - `gnome-build-meta/` — GNOME's BuildStream repository
 - **Build logs**: `/var/tmp/aurora-build.log`
 - **Cache**: `~/.cache/buildstream/`
-- **This project**: `/var/home/james/dev/kde-linux/`
+- **This project**: `/var/home/james/dev/tromso/`
+
+---
+
+## VM & Graphical Boot Troubleshooting
+
+### Systemd Ordering Cycles
+If the VM hangs or boots to an emergency shell with "Ordering cycle found" messages in the serial log:
+- Check `elements/tromso/system-config.bst`.
+- **NEVER** use `Before=basic.target` on core services like `dbus.service`. This is a common source of cycles that causes D-Bus to be skipped, breaking SDDM and other dependencies.
+
+### SDDM & Graphical Target
+To ensure the system boots to a KDE login:
+1. **Explicit Enablement**: SDDM must be explicitly enabled in `elements/tromso/system-config.bst` by creating symlinks for `display-manager.service` and adding `sddm.service` to `graphical.target.wants`.
+2. **Default Target**: The default systemd target should be symlinked to `graphical.target`.
+3. **Dependencies**: SDDM requires `accountsservice` (`kde-build-meta.bst:core-deps/accountsservice.bst`) to list users and manage sessions. Ensure it is in `elements/tromso/deps.bst`.
+4. **Software Rendering**: In virtualized environments (libvirt/QEMU), SDDM may fail to start with GPU errors. Add a systemd drop-in for `sddm.service` setting `Environment=QT_QUICK_BACKEND=software` to use the software rasterizer.
+
+### Linker Cache (`ldconfig`)
+The composed OCI image requires a fresh linker cache for SDDM to resolve Qt6 libraries at boot:
+- Use `chroot /layer ldconfig` or `ldconfig -r /layer -f /layer/etc/ld.so.conf` in `elements/oci/tromso.bst`.
+- Omit `-C /etc/ld.so.cache` if it causes "need absolute file name" errors.
+
+### Disk Image Corruption (Loop Devices)
+When generating bootable images with `bootc install`:
+- **Avoid Sparse Files**: `truncate` followed by `bootc` on loop devices can lead to metadata corruption (especially on EXT4).
+- **Use `fallocate`**: Always pre-allocate the full disk size using `fallocate -l 30G bootable.raw`.
+- **Prefer XFS**: For the bootable image filesystem, XFS has shown better resilience than EXT4 in this specific loopback deployment workflow.
+- **Syncing**: Always `sync` before detaching loop devices or starting the VM.
 
 ---
 

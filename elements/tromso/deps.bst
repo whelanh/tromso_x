@@ -12,6 +12,9 @@ depends:
   # dconf: needed by dconf-update.service and KDE/GNOME settings infrastructure
   - kde-build-meta.bst:core-deps/dconf.bst
 
+  # accountsservice: required by SDDM to list users and manage user sessions
+  - kde-build-meta.bst:core-deps/accountsservice.bst
+
   # System configuration: dbus units, system users, sshd, networkd DHCP
   - tromso/system-config.bst
 

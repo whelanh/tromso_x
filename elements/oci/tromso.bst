@@ -38,7 +38,7 @@ config:
          --sysroot /layer \
          --initscripts /initial_scripts \
          --seed "%{sysroot-seed}" \
-         --noroot --noboot >/dev/null
+         --noroot --noboot
 
     - |
       systemd-sysusers --root /layer
@@ -72,6 +72,25 @@ config:
       setcap cap_sys_nice+ep /layer/usr/bin/kwin_wayland
       setcap cap_setuid+ep /layer/usr/bin/newuidmap
       setcap cap_setgid+ep /layer/usr/bin/newgidmap
+      # Refresh linker cache in the composed rootfs so SDDM can resolve Qt6
+      # libraries installed under /usr/lib at first boot.
+      # Qt6 core libs live in /parent/usr/lib (KDE Linux base image); chrooting
+      # only into /layer misses them.  Mount parent+layer as an overlay so
+      # ldconfig sees the full merged /usr/lib and writes the correct cache into
+      # /layer/etc/ld.so.cache (overlay upper-dir write-back).
+      if [ ! -f /layer/etc/ld.so.conf ]; then
+        printf 'include /etc/ld.so.conf.d/*.conf\n' > /layer/etc/ld.so.conf
+      fi
+      mkdir -p /ld-work /ld-merged
+      if mount -t overlay overlay \
+           -o "lowerdir=/parent,upperdir=/layer,workdir=/ld-work" \
+           /ld-merged 2>/dev/null; then
+        chroot /ld-merged ldconfig || true
+        umount /ld-merged
+      else
+        chroot /layer ldconfig || true
+      fi
+      rm -rf /ld-merged /ld-work
     - |
       # Force an explicit font family in the SDDM/Breeze QML that renders the
       # greeter text. Live guest testing showed this changes the framebuffer,

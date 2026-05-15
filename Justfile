@@ -256,8 +256,6 @@ generate-bootable-image $base_dir=base_dir $filesystem=filesystem:
         --wipe \
         --bootloader none \
         --karg systemd.firstboot=no \
-        --karg splash \
-        --karg quiet \
         --karg console=tty0 \
         --karg console=ttyS0 \
         --karg systemd.debug_shell=ttyS1
@@ -367,8 +365,6 @@ boot-vm $base_dir=base_dir:
         -device virtio-net-pci,netdev=net0 \
         -netdev user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22 \
         -serial telnet:127.0.0.1:4444,server,nowait \
-        -display none \
-        -daemonize \
         -pidfile /tmp/tromso-vm.pid
 
 # ── Chunkah ──────────────────────────────────────────────────────────

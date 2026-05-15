@@ -44,7 +44,6 @@ config:
     Documentation=man:dbus-daemon(1)
     Requires=dbus.socket
     After=dbus.socket
-    Before=basic.target
     # Avoid conflict with dbus-broker if it gets added later
     Conflicts=dbus-daemon.service
 
@@ -88,6 +87,7 @@ config:
   # openssh to be compiled with --with-systemd.  freedesktop-sdk's openssh
   # build does not include that flag, so we use Type=simple to avoid
   # a startup timeout that causes systemd to mark the service as failed.
+  # ExecStartPre generates any missing host keys (ostree images ship no keys).
   - |
     install -Dm644 /dev/stdin "%{install-root}/usr/lib/systemd/system/sshd.service" <<'EOF'
     [Unit]
@@ -97,6 +97,7 @@ config:
 
     [Service]
     Type=simple
+    ExecStartPre=-/usr/bin/ssh-keygen -A
     ExecStart=/usr/bin/sshd -D -e
     Restart=on-failure
     RestartSec=5s
@@ -111,6 +112,55 @@ config:
   - |
     install -d "%{install-root}/usr/lib/systemd/system/multi-user.target.wants"
     ln -sf ../sshd.service "%{install-root}/usr/lib/systemd/system/multi-user.target.wants/sshd.service"
+
+  # ── ld.so.conf ───────────────────────────────────────────────────────
+  # Without /etc/ld.so.conf, ldconfig ignores /etc/ld.so.conf.d/*.conf
+  # and the Qt6 libs in /usr/lib/ are never registered in the linker
+  # cache.  Qt6 ships in the KDE Linux parent OCI layer (not this Aurora
+  # layer), so the cache must be rebuilt on the merged image at OCI
+  # assembly time (see oci/tromso.bst).
+  - |
+    install -Dm644 /dev/stdin "%{install-root}/etc/ld.so.conf" <<'EOF'
+    include /etc/ld.so.conf.d/*.conf
+    EOF
+
+  # ── sddm.service ─────────────────────────────────────────────────────
+  # KDE Linux is Wayland-native; Xorg is not installed.  SDDM must use
+  # Wayland mode with kwin_wayland as the greeter compositor.
+  # QT_QUICK_BACKEND=software enables Mesa software rasterizer for the
+  # QML greeter UI in virtualised environments (virtio-vga / llvmpipe).
+  # ── sddm.service drop-in ─────────────────────────────────────────────
+  - |
+    install -d "%{install-root}/usr/lib/systemd/system/sddm.service.d"
+    install -Dm644 /dev/stdin "%{install-root}/usr/lib/systemd/system/sddm.service.d/debug.conf" <<'EOF'
+    [Service]
+    Environment=QT_QUICK_BACKEND=software
+    Environment=QT_LOGGING_RULES=*.debug=true
+    StandardOutput=journal+console
+    StandardError=journal+console
+    EOF
+
+  # ── SDDM Wayland configuration ────────────────────────────────────────
+  - |
+    install -d "%{install-root}/etc/sddm.conf.d"
+    install -Dm644 /dev/stdin "%{install-root}/etc/sddm.conf.d/wayland.conf" <<'EOF'
+    [General]
+    DisplayServer=wayland
+    GreeterEnvironment=QT_WAYLAND_SHELL_INTEGRATION=layer-shell,QT_QUICK_BACKEND=software
+
+    [Wayland]
+    CompositorCommand=kwin_wayland --no-lockscreen --no-global-shortcuts --locale1
+    EOF
+
+  # Enable SDDM as the default display manager
+  - |
+    install -d "%{install-root}/usr/lib/systemd/system/graphical.target.wants"
+    ln -sf ../sddm.service "%{install-root}/usr/lib/systemd/system/display-manager.service"
+    ln -sf ../sddm.service "%{install-root}/usr/lib/systemd/system/graphical.target.wants/sddm.service"
+
+  # ── systemd default target ──────────────────────────────────────────
+  - |
+    ln -sf graphical.target "%{install-root}/usr/lib/systemd/system/default.target"
 
   # ── PAM sshd config ──────────────────────────────────────────────────
   # Without /etc/pam.d/sshd, sshd falls back to /etc/pam.d/other which
@@ -283,6 +333,8 @@ config:
     ln -sf /dev/null "%{install-root}/etc/systemd/system/systemd-homed.service"
     # debug-shell: ttyS1 early root shell — only needed during development
     ln -sf /dev/null "%{install-root}/etc/systemd/system/debug-shell.service"
+    # sddm-themes-workaround: recursive overlay might hide themes
+    ln -sf /dev/null "%{install-root}/etc/systemd/system/usr-share-sddm-themes.mount"
     # flatpak-preinstall: requires Flatpak infrastructure not present in base image
     ln -sf /dev/null "%{install-root}/etc/systemd/system/flatpak-preinstall.service"
 
@@ -325,6 +377,12 @@ public:
         - '%{sysconfdir}/systemd/system/systemd-homed.service'
         - '%{sysconfdir}/systemd/system/debug-shell.service'
         - '%{sysconfdir}/systemd/system/flatpak-preinstall.service'
+        - '%{sysconfdir}/ld.so.conf'
+        - '%{indep-libdir}/systemd/system/sddm.service.d/debug.conf'
+        - '%{sysconfdir}/sddm.conf.d/wayland.conf'
+        - '%{indep-libdir}/systemd/system/display-manager.service'
+        - '%{indep-libdir}/systemd/system/graphical.target.wants/sddm.service'
+        - '%{indep-libdir}/systemd/system/default.target'
         - '%{bindir}/unix_chkpwd'
         - '%{sysconfdir}/pam.d/kde'
         - '%{sysconfdir}/pam.d/kde-fingerprint'
