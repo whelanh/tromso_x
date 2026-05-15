@@ -82,15 +82,15 @@ config:
         printf 'include /etc/ld.so.conf.d/*.conf\n' > /layer/etc/ld.so.conf
       fi
       mkdir -p /ld-work /ld-merged
-      if mount -t overlay overlay \
+      if timeout 30 mount -t overlay overlay \
            -o "lowerdir=/parent,upperdir=/layer,workdir=/ld-work" \
            /ld-merged 2>/dev/null; then
         chroot /ld-merged ldconfig || true
-        umount /ld-merged
+        umount /ld-merged || true
       else
         chroot /layer ldconfig || true
       fi
-      rm -rf /ld-merged /ld-work
+      rm -rf /ld-merged /ld-work 2>/dev/null || true
     - |
       # Force an explicit font family in the SDDM/Breeze QML that renders the
       # greeter text. Live guest testing showed this changes the framebuffer,
