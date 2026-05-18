@@ -312,6 +312,19 @@ config:
     EOF
 
   # ── KDE screen locker default: auto-lock disabled ────────────────────
+  # ── kde-settings profile activation ────────────────────────────────────
+  # On Fedora, the kde-settings RPM ships /etc/xdg/plasma-workspace/env/env.sh
+  # which adds /usr/share/kde-settings/kde-profile/default/xdg to XDG_CONFIG_DIRS,
+  # making Plasma read the system-wide kdeglobals, kcm-about-distrorc, ksplashrc
+  # etc. that aurora/common ships there.  We don't have that RPM, so we ship the
+  # activation script ourselves.
+  - |
+    install -Dm644 /dev/stdin \
+      "%{install-root}/etc/xdg/plasma-workspace/env/kde-settings.sh" <<'EOF'
+    # Activate Aurora system-wide KDE defaults profile (mirrors Fedora kde-settings RPM)
+    export XDG_CONFIG_DIRS=/usr/share/kde-settings/kde-profile/default/xdg${XDG_CONFIG_DIRS:+:$XDG_CONFIG_DIRS}
+    EOF
+
   # Ship a system-wide default kscreenlockerrc that disables the auto-lock
   # timer.  Users can override this in their own ~/.config/kscreenlockerrc.
   # Without this the screen locks after 5 minutes by default, which breaks
@@ -388,3 +401,4 @@ public:
         - '%{sysconfdir}/pam.d/kde-fingerprint'
         - '%{sysconfdir}/pam.d/kde-smartcard'
         - '%{sysconfdir}/xdg/kscreenlockerrc'
+        - '%{sysconfdir}/xdg/plasma-workspace/env/kde-settings.sh'
