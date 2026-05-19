@@ -325,6 +325,23 @@ config:
     export XDG_CONFIG_DIRS=/usr/share/kde-settings/kde-profile/default/xdg${XDG_CONFIG_DIRS:+:$XDG_CONFIG_DIRS}
     EOF
 
+  # ── KDE default fonts via kde-settings profile ──────────────────────
+  # Without a kdeglobals font entry, Qt6/Plasma picks a platform default that
+  # may not have glyphs for all panel widget symbols → tofu squares.
+  # We set Noto Sans (guaranteed present) for all font roles.
+  # The file goes into the kde-settings XDG profile dir activated by
+  # kde-settings.sh above.  Format: Qt6 font description string.
+  - |
+    install -Dm644 /dev/stdin \
+      "%{install-root}/usr/share/kde-settings/kde-profile/default/xdg/kdeglobals" <<'EOF'
+    [General]
+    font=Noto Sans,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
+    fixed=Noto Sans Mono,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
+    smallestReadableFont=Noto Sans,8,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
+    toolBarFont=Noto Sans,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
+    menuFont=Noto Sans,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
+    EOF
+
   # Ship a system-wide default kscreenlockerrc that disables the auto-lock
   # timer.  Users can override this in their own ~/.config/kscreenlockerrc.
   # Without this the screen locks after 5 minutes by default, which breaks
@@ -411,3 +428,4 @@ public:
         - '%{sysconfdir}/pam.d/kde-smartcard'
         - '%{sysconfdir}/xdg/kscreenlockerrc'
         - '%{sysconfdir}/xdg/plasma-workspace/env/kde-settings.sh'
+        - '%{datadir}/kde-settings/kde-profile/default/xdg/kdeglobals'
