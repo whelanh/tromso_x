@@ -130,3 +130,7 @@ See `AGENTS.md` for full conventions and workflows.
 - **[BuildStream](https://www.buildstream.build/)** — build system
 
 ## ISO Builder (merged from tromso-iso)
+
+---
+
+Part of the [TunaOS](https://tunaos.org) ecosystem. [Docs](https://tunaos.org) · [Contributing](CONTRIBUTING.md)
