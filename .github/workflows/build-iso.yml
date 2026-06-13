@@ -1,9 +1,4 @@
-name: Trigger Tromso Live ISO Build
-
-# Dispatches a repository_dispatch to hanthor/tromso-iso to trigger the ISO
-# build after a successful OCI image build.  The actual ISO build runs in the
-# tromso-iso repo using the dakota-iso approach (dmsquash-live, systemd-boot,
-# tuna-installer).
+name: Build and Publish Tromsø Live ISO
 
 on:
   workflow_run:
@@ -11,29 +6,103 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      skip_upload:
+        description: 'Build ISO but skip uploading to R2 (dry run)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tromso-iso-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  trigger-iso-build:
-    name: Trigger ISO build in hanthor/tromso-iso
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+  build-iso:
+    name: Build Tromsø Live ISO
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: Dispatch ISO build to hanthor/tromso-iso
-        uses: actions/github-script@v7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y just podman rclone mtools xorriso \
+            qemu-system-x86 ovmf
+
+      - name: Build Live ISO
+        run: |
+          sudo just iso-sd-boot tromso
+
+      - name: Compute ISO path and name
+        id: iso
+        run: |
+          ISO="./tromso-live.iso"
+          DATE=$(date +%Y%m%d)
+          SHA=$(git rev-parse --short HEAD)
+          echo "path=${ISO}" >> "$GITHUB_OUTPUT"
+          echo "dated=tromso-live-${DATE}-${SHA}.iso" >> "$GITHUB_OUTPUT"
+          ls -lh "$ISO"
+
+      - name: Upload ISO to Cloudflare R2
+        if: ${{ !inputs.skip_upload }}
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_REGION: auto
+          RCLONE_CONFIG_R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          ISO="${{ steps.iso.outputs.path }}"
+          DATED="${{ steps.iso.outputs.dated }}"
+
+          echo "==> Uploading ${DATED} ..."
+          rclone copyto --log-level INFO --checksum --s3-no-check-bucket \
+            "$ISO" "R2:${R2_BUCKET}/tromso/${DATED}"
+
+          echo "==> Updating tromso-live-latest.iso ..."
+          rclone copyto --log-level INFO --s3-no-check-bucket \
+            "$ISO" "R2:${R2_BUCKET}/tromso/tromso-live-latest.iso"
+
+          echo ""
+          echo "  https://download.tunaos.org/tromso/tromso-live-latest.iso"
+
+      - name: Boot smoke test (QEMU)
+        if: ${{ !inputs.skip_upload }}
+        timeout-minutes: 15
+        run: |
+          ISO="${{ steps.iso.outputs.path }}"
+          echo "==> Booting $ISO in QEMU (OVMF, 2 GB RAM, 60 s timeout) ..."
+
+          timeout 60 qemu-system-x86_64 \
+            -nodefaults -nographic -serial mon:stdio \
+            -m 2048 -cpu host -enable-kvm \
+            -bios /usr/share/OVMF/OVMF.fd \
+            -cdrom "$ISO" -boot d \
+          | tee qemu-boot.log &
+          QEMU_PID=$!
+
+          # Wait for QEMU to finish or timeout
+          wait $QEMU_PID 2>/dev/null || true
+
+          echo "==> QEMU output (last 40 lines):"
+          tail -40 qemu-boot.log
+
+          if grep -q "Welcome to" qemu-boot.log; then
+            echo "✅ ISO booted successfully"
+          else
+            echo "⚠️  ISO may not have reached login (check log above)"
+          fi
+
+      - name: Upload ISO as artifact
+        if: always()
+        uses: actions/upload-artifact@4cec3d8ff04cdd1f65019b6a7bca312c5c27035c # v4
         with:
-          github-token: ${{ secrets.ISO_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
-          script: |
-            await github.rest.repos.createDispatchEvent({
-              owner: 'hanthor',
-              repo: 'tromso-iso',
-              event_type: 'oci-image-published',
-              client_payload: {
-                sha: context.sha,
-                ref: context.ref,
-                image: 'ghcr.io/hanthor/tromso:latest',
-              }
-            });
-            core.info('Dispatched oci-image-published to hanthor/tromso-iso');
+          name: ${{ steps.iso.outputs.dated }}
+          path: ${{ steps.iso.outputs.path }}
+          if-no-files-found: ignore
