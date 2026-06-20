@@ -49,6 +49,7 @@ cd tromso
 
 # Background build with live log tailing
 BST_FLAGS="--max-jobs $(nproc) --fetchers $(nproc)" just bst-build
+just export
 
 # Or foreground build + OCI export
 just build
