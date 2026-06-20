@@ -58,6 +58,7 @@ just build
 
 ```bash
 # Generate a bootable disk image (requires a completed build)
+just generate-bootable-image
 
 # Boot the image in QEMU
 just boot-vm
