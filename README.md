@@ -50,7 +50,7 @@ cd tromso
 # Background build with live log tailing
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-just bst-build
+BST_FLAGS="--max-jobs $(nproc) --fetchers $(nproc)" just bst-build
 
 # Or foreground build + OCI export
 
