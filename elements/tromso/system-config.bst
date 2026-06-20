@@ -69,6 +69,19 @@ config:
   # are created before the services that need them start.
   - |
     install -Dm644 /dev/stdin "%{install-root}/usr/lib/sysusers.d/aurora-system.conf" <<'EOF'
+    # System groups required by udev 50-udev-default.rules for device permissions
+    g video - -
+    g render - -
+    g input - -
+    g audio - -
+    g kvm - -
+    g tty 5
+    g disk 6
+    g cdrom - -
+    g dialout - -
+    g lp - -
+    g tape - -
+
     # messagebus: required by dbus-daemon (runs as this user)
     u messagebus - "D-Bus Message Daemon" /run/dbus /usr/sbin/nologin
 
@@ -80,6 +93,12 @@ config:
 
     # polkitd: PolicyKit daemon
     u polkitd - "User for polkitd" /etc/polkit-1 /usr/sbin/nologin
+
+    # sddm: display manager
+    u sddm - "Simple Desktop Display Manager" /var/lib/sddm /usr/sbin/nologin
+    m sddm video
+    m sddm render
+    m sddm input
     EOF
 
   # ── sshd.service ─────────────────────────────────────────────────────
