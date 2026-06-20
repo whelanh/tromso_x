@@ -1,0 +1,200 @@
+name: Track Upstream Refs
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'   # Weekly — Monday 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      track_kbm:
+        description: 'Track KDE/core-deps/fdo-sdk refs in kde-build-meta-x'
+        type: boolean
+        default: true
+      track_tromso:
+        description: 'Track tromso-local element refs (bootc, uupd, etc.)'
+        type: boolean
+        default: true
+
+env:
+  BST2_IMAGE: registry.gitlab.com/freedesktop-sdk/infrastructure/freedesktop-sdk-docker-images/bst2:64eb0b4930d57a92710822898fb73af6cc1ae35d
+  KBM_REPO: whelanh/kde-build-meta-x
+
+concurrency:
+  group: update-refs
+  cancel-in-progress: false
+
+jobs:
+  track:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      # ── Setup ─────────────────────────────────────────────────────────
+      - name: Checkout tromso_x
+        uses: actions/checkout@v4
+
+      - name: Install Just
+        run: |
+          if command -v just &>/dev/null; then exit 0; fi
+          JUST_VERSION=$(curl -s https://api.github.com/repos/casey/just/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+          curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin just
+
+      - name: Pull bst2 image
+        run: podman pull "$BST2_IMAGE"
+
+      - name: Prepare BST cache dirs
+        run: mkdir -p "${HOME}/.cache/buildstream" "${HOME}/.config/buildstream"
+
+      # ── Phase 1: Track refs in kde-build-meta-x ───────────────────────
+      - name: Clone kde-build-meta-x
+        if: inputs.track_kbm != false
+        run: |
+          rm -rf /tmp/kde-build-meta
+          git clone --depth=1 "https://x-access-token:${{ secrets.KBM_PUSH_TOKEN }}@github.com/${{ env.KBM_REPO }}.git" /tmp/kde-build-meta
+          cd /tmp/kde-build-meta && git fetch --unshallow
+
+      - name: Track KDE framework/plasma/app refs
+        if: inputs.track_kbm != false
+        run: |
+          ELEMENTS=$(find /tmp/kde-build-meta/elements/kde -name '*.bst' \
+            | sed 's|/tmp/kde-build-meta/elements/||' | sort)
+          podman run --rm --privileged \
+            --device /dev/fuse --network=host \
+            --security-opt label=type:unconfined_t \
+            -v /tmp/kde-build-meta:/src:rw \
+            -v "${HOME}/.cache/buildstream:/root/.cache/buildstream:rw" \
+            -w /src \
+            "$BST2_IMAGE" \
+            bst --no-interactive source track $ELEMENTS 2>&1 || true
+
+      - name: Track core-deps refs
+        if: inputs.track_kbm != false
+        run: |
+          ELEMENTS=$(find /tmp/kde-build-meta/elements/core-deps -name '*.bst' \
+            | sed 's|/tmp/kde-build-meta/elements/||' | sort)
+          podman run --rm --privileged \
+            --device /dev/fuse --network=host \
+            --security-opt label=type:unconfined_t \
+            -v /tmp/kde-build-meta:/src:rw \
+            -v "${HOME}/.cache/buildstream:/root/.cache/buildstream:rw" \
+            -w /src \
+            "$BST2_IMAGE" \
+            bst --no-interactive source track $ELEMENTS 2>&1 || true
+
+      - name: Track freedesktop-sdk junction ref
+        if: inputs.track_kbm != false
+        run: |
+          podman run --rm --privileged \
+            --device /dev/fuse --network=host \
+            --security-opt label=type:unconfined_t \
+            -v /tmp/kde-build-meta:/src:rw \
+            -v "${HOME}/.cache/buildstream:/root/.cache/buildstream:rw" \
+            -w /src \
+            "$BST2_IMAGE" \
+            bst --no-interactive source track freedesktop-sdk.bst 2>&1 || true
+
+      - name: Commit and push kde-build-meta-x
+        if: inputs.track_kbm != false
+        run: |
+          cd /tmp/kde-build-meta
+          git config user.name  "track-bot"
+          git config user.email "track-bot@users.noreply.github.com"
+
+          if git diff --quiet elements/; then
+            echo "No KBM ref changes detected."
+            echo "KBM_CHANGED=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          echo "::group::Changed elements"
+          git diff --stat elements/
+          echo "::endgroup::"
+
+          git add elements/
+          TMPDIR=/var/tmp git commit -m "Track upstream refs $(date -u +%Y-%m-%d)"
+          git push origin master
+
+          SHA=$(git rev-parse HEAD)
+          echo "KBM_CHANGED=true"           >> "$GITHUB_ENV"
+          echo "KBM_SHA=${SHA}"             >> "$GITHUB_ENV"
+          echo "KBM_SHORT=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_ENV"
+
+      # ── Phase 2: Update junction in tromso_x ──────────────────────────
+      - name: Update kde-build-meta junction
+        if: env.KBM_CHANGED == 'true'
+        run: |
+          curl -sL "https://github.com/${{ env.KBM_REPO }}/archive/${KBM_SHA}.tar.gz" \
+            -o /tmp/kbm-new.tar.gz
+          NEW_REF=$(sha256sum /tmp/kbm-new.tar.gz | cut -d' ' -f1)
+          NEW_BASEDIR=$(tar tzf /tmp/kbm-new.tar.gz | head -1 | sed 's|/$||')
+
+          cat > elements/kde-build-meta.bst << JUNCTION
+          kind: junction
+          description: Junction to ${{ env.KBM_REPO }} (KDE Plasma 6 build metadata)
+
+          sources:
+          - kind: tar
+            url: github:${{ env.KBM_REPO }}/archive/${KBM_SHA}.tar.gz
+            ref: ${NEW_REF}
+            base-dir: ${NEW_BASEDIR}
+
+          config:
+            options:
+              arch: "%{arch}"
+          JUNCTION
+          sed -i 's/^          //' elements/kde-build-meta.bst
+
+      # ── Phase 3: Track tromso-local elements ──────────────────────────
+      - name: Clear stale staged-junction cache
+        if: env.KBM_CHANGED == 'true'
+        run: rm -rf .bst/staged-junctions/kde-build-meta.bst
+
+      - name: Track tromso-local element refs
+        if: inputs.track_tromso != false
+        run: |
+          ELEMENTS=""
+          for dir in elements/tromso elements/gnomeos-deps; do
+            if [ -d "$dir" ]; then
+              ELEMENTS="$ELEMENTS $(find "$dir" -name '*.bst' | sed 's|^elements/||' | sort)"
+            fi
+          done
+          if [ -n "$ELEMENTS" ]; then
+            BST_FLAGS="--no-interactive" just bst source track $ELEMENTS 2>&1 || true
+          fi
+
+      # ── Phase 4: Create PR on tromso_x ────────────────────────────────
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: auto-track/refs-update
+          title: "Track upstream refs ${{ env.KBM_SHORT && format('(kde-build-meta-x {0})', env.KBM_SHORT) || '' }}"
+          body: |
+            Automated ref update via `bst source track`.
+
+            **What changed:**
+            - KDE frameworks/plasma/apps: tracked to latest `master`
+            - core-deps: tracked to latest release tags
+            - freedesktop-sdk: tracked to latest `25.08.*` point release
+            - tromso-local elements: tracked to latest refs
+            ${{ env.KBM_CHANGED == 'true' && format('- kde-build-meta-x junction updated to `{0}`', env.KBM_SHORT) || '' }}
+
+            **Review checklist:**
+            - [ ] Check the diff for unexpected large version jumps
+            - [ ] Verify no patches were invalidated (search for `.patch` in changed files)
+            - [ ] Merge to trigger the build workflow and validate
+          commit-message: "Track upstream refs$(env.KBM_SHORT && format(' — junction {0}', env.KBM_SHORT) || '')"
+          delete-branch: true
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Ref Tracking Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **KBM changed**: ${{ env.KBM_CHANGED || 'false' }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ env.KBM_CHANGED }}" = "true" ]; then
+            echo "- **KBM commit**: \`${{ env.KBM_SHORT }}\` (${{ env.KBM_SHA }})" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "- **Tromso-local tracked**: ${{ inputs.track_tromso != false }}" >> "$GITHUB_STEP_SUMMARY"
