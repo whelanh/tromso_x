@@ -49,7 +49,7 @@ cd tromso
 
 # Background build with live log tailing
 BST_FLAGS="--max-jobs $(nproc) --fetchers $(nproc)" just bst-build
-just export
+BST_FLAGS="--no-interactive" just bst build oci/tromso.bst && just export
 
 # Or foreground build + OCI export
 just build
