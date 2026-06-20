@@ -61,7 +61,7 @@ just build
 # Generate a bootable disk image (requires a completed build)
 just generate-bootable-image
 
-useful command to make bootable.raw much smaller:
+# useful command to make bootable.raw much smaller:
 qemu-img convert -f raw -O qcow2 bootable.raw bootable.qcow2
 
 # Boot the image in QEMU
