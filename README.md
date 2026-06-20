@@ -48,13 +48,9 @@ git clone https://github.com/tuna-os/tromso.git
 cd tromso
 
 # Background build with live log tailing
-
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 BST_FLAGS="--max-jobs $(nproc) --fetchers $(nproc)" just bst-build
 
 # Or foreground build + OCI export
-
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 just build
 ```
 
@@ -63,17 +59,10 @@ just build
 ```bash
 # Generate a bootable disk image (requires a completed build)
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-just generate-bootable-image
-
 # Boot the image in QEMU
-
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 just boot-vm
 
 # SSH in (password: aurora)
-
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 ssh -p 2222 root@localhost
 ```
 
