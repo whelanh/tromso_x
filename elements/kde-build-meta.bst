@@ -3,9 +3,9 @@ description: Junction to whelanh/kde-build-meta-x (KDE Plasma 6 build metadata)
 
 sources:
 - kind: tar
-  url: github:whelanh/kde-build-meta-x/archive/eec9dfee7157b44bda71cd974b8a51ef7244d64c.tar.gz
-  ref: 7796325f1183e9e784f2f46b3fba4b6bc0fd64e79bed4cc4a4aecc351294d3e3
-  base-dir: kde-build-meta-x-eec9dfee7157b44bda71cd974b8a51ef7244d64c
+  url: github:whelanh/kde-build-meta-x/archive/efa0347d3d9122cc7deda5bb241a6e6f83c2ecae.tar.gz
+  ref: 8e31ef246954d278e82025d392d092c5a17bfd2a7a873eed1ed058922f7ea5a3
+  base-dir: kde-build-meta-x-efa0347d3d9122cc7deda5bb241a6e6f83c2ecae
 
 config:
   options:
