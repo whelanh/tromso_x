@@ -29,9 +29,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    env:
-      TROMSO_PUSH_TOKEN: ${{ secrets.TROMSO_PUSH_TOKEN }}
-      HAS_TROMSO_PUSH_TOKEN: ${{ secrets.TROMSO_PUSH_TOKEN != '' }}
 
     steps:
       # ── Setup ─────────────────────────────────────────────────────────
@@ -172,10 +169,9 @@ jobs:
 
       # ── Phase 4: Create PR on tromso_x ────────────────────────────────
       - name: Create Pull Request
-        if: env.HAS_TROMSO_PUSH_TOKEN == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
-          token: ${{ env.TROMSO_PUSH_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           branch: auto-track/refs-update
           title: "Track upstream refs${{ env.KBM_SHORT != '' && format(' (kde-build-meta-x {0})', env.KBM_SHORT) || '' }}"
           body: |
@@ -194,13 +190,6 @@ jobs:
             - [ ] Merge to trigger the build workflow and validate
           commit-message: "Track upstream refs${{ env.KBM_SHORT != '' && format(' — junction {0}', env.KBM_SHORT) || '' }}"
           delete-branch: true
-
-      - name: Summarize missing tromso PR token
-        if: env.HAS_TROMSO_PUSH_TOKEN != 'true'
-        run: |
-          echo "### Pull request creation skipped" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Configure \`TROMSO_PUSH_TOKEN\` with \`Contents: Read and write\` and \`Pull requests: Read and write\` on \`whelanh/tromso_x\`." >> "$GITHUB_STEP_SUMMARY"
-          echo "- The default \`GITHUB_TOKEN\` cannot open PRs in this repository because GitHub Actions PR creation is disabled in repository settings." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summary
         if: always()
