@@ -39,7 +39,7 @@ This single command:
 ### After tracking, build locally
 
 ```bash
-BST_FLAGS="--no-interactive" just bst build oci/tromso.bst
+BST_FLAGS="--max-jobs $(nproc) --fetchers $(nproc) --no-interactive" just bst build oci/tromso.bst && just export
 ```
 
 ### CI workflow (backup)
