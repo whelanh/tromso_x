@@ -175,7 +175,7 @@ jobs:
         with:
           token: ${{ env.TROMSO_PUSH_TOKEN }}
           branch: auto-track/refs-update
-          title: "Track upstream refs ${{ env.KBM_SHORT && format('(kde-build-meta-x {0})', env.KBM_SHORT) || '' }}"
+          title: "Track upstream refs${{ env.KBM_SHORT != '' && format(' (kde-build-meta-x {0})', env.KBM_SHORT) || '' }}"
           body: |
             Automated ref update via `bst source track`.
 
@@ -190,7 +190,7 @@ jobs:
             - [ ] Check the diff for unexpected large version jumps
             - [ ] Verify no patches were invalidated (search for `.patch` in changed files)
             - [ ] Merge to trigger the build workflow and validate
-          commit-message: "Track upstream refs$(env.KBM_SHORT && format(' — junction {0}', env.KBM_SHORT) || '')"
+          commit-message: "Track upstream refs${{ env.KBM_SHORT != '' && format(' — junction {0}', env.KBM_SHORT) || '' }}"
           delete-branch: true
 
       - name: Summarize missing tromso PR token
