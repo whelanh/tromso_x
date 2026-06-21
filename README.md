@@ -8,6 +8,10 @@ of freedesktop-sdk and publishes a bootable OCI image to `ghcr.io/tuna-os/tromso
 
 Tromso_x is a fork from the original Tromso with the aim of using the latest KDE, Qt6, and linux packages as soon as they are available to produce a "leading edge" rolling release.
 
+Tromso_x's companion repo is whelanh/kde-build-meta-x.
+
+The workflow is done locally on your own machine and is described in [MANUAL_UPDATES.md](https://github.com/whelanh/tromso_x/blob/main/MANUAL-UPDATES.md)
+
 **Status: Builds successfully and boots to a working KDE Plasma 6 Wayland desktop.**
 
 ## Architecture
