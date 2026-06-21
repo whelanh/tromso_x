@@ -9,7 +9,7 @@ auto-tracked and require manual intervention.
 ## Table of Contents
 
 1. [How It Works — GitHub-Hosted CI + Local Builds](#1-how-it-works)
-2. [Qt6 Version Bumps (25 tar-based elements)](#2-qt6-version-bumps)
+2. [Qt6 Tracking Notes](#2-qt6-tracking-notes)
 3. [Intentionally Pinned Elements](#3-intentionally-pinned-elements)
 4. [Patch Conflicts After Tracking](#4-patch-conflicts-after-tracking)
 5. [Adding New KDE Packages](#5-adding-new-kde-packages)
@@ -41,156 +41,36 @@ tab → "Track Upstream Refs" → "Run workflow".
 
 ---
 
-## 2. Qt6 Version Bumps
+## 2. Qt6 Tracking Notes
 
-**25 Qt6 elements** use `tar` sources pointing to versioned release
-tarballs from `https://download.qt.io/`. They have **no `track` key** and
-are invisible to `bst source track`.
+All 30 Qt6 elements now use `git_repo` sources with `track: 'v6.*'` and
+are **automatically tracked** by the `update-refs.yml` workflow alongside
+KDE frameworks, plasma, and apps. Pre-release tags (`*rc*`, `*alpha*`,
+`*beta*`) are excluded.
 
-### Current version: Qt 6.10.3
+### When manual intervention is needed
 
-All 25 tar-based elements are at the same Qt version. Their URLs follow the
-pattern:
+- **Qt major version change** (e.g., Qt 6 → Qt 7): Update the `track:`
+  pattern in all 30 elements from `'v6.*'` to `'v7.*'`. This is unlikely
+  in the near term.
 
-```
-qt:6.10/6.10.3/submodules/MODULENAME-everywhere-src-6.10.3.tar.xz
-```
+- **Track pattern adjustment**: If Qt starts using a different tag format,
+  update the `track:` and `exclude:` fields in the `.bst` files under
+  `elements/kde/qt6/` in
+  [kde-build-meta-x](https://github.com/whelanh/kde-build-meta-x).
 
-### Files to update (all in `kde-build-meta-x`)
+### Qt6 element source format
 
-These live under `elements/kde/qt6/` in the
-[kde-build-meta-x](https://github.com/whelanh/kde-build-meta-x) repo:
-
-| Element | Module name in URL |
-|---------|--------------------|
-| `qt6-qt5compat.bst` | `qt5compat` |
-| `qt6-qtbase.bst` | `qtbase` |
-| `qt6-qtconnectivity.bst` | `qtconnectivity` |
-| `qt6-qtdeclarative.bst` | `qtdeclarative` |
-| `qt6-qthttpserver.bst` | `qthttpserver` |
-| `qt6-qtimageformats.bst` | `qtimageformats` |
-| `qt6-qtlanguageserver.bst` | `qtlanguageserver` |
-| `qt6-qtlocation.bst` | `qtlocation` |
-| `qt6-qtmultimedia.bst` | `qtmultimedia` |
-| `qt6-qtnetworkauth.bst` | `qtnetworkauth` |
-| `qt6-qtpositioning.bst` | `qtpositioning` |
-| `qt6-qtremoteobjects.bst` | `qtremoteobjects` |
-| `qt6-qtscxml.bst` | `qtscxml` |
-| `qt6-qtsensors.bst` | `qtsensors` |
-| `qt6-qtserialbus.bst` | `qtserialbus` |
-| `qt6-qtserialport.bst` | `qtserialport` |
-| `qt6-qtshadertools.bst` | `qtshadertools` |
-| `qt6-qtspeech.bst` | `qtspeech` |
-| `qt6-qtsvg.bst` | `qtsvg` |
-| `qt6-qttools.bst` | `qttools` |
-| `qt6-qtvirtualkeyboard.bst` | `qtvirtualkeyboard` |
-| `qt6-qtwayland.bst` | `qtwayland` |
-| `qt6-qtwebchannel.bst` | `qtwebchannel` |
-| `qt6-qtwebsockets.bst` | `qtwebsockets` |
-| `qt6-qtwebview.bst` | `qtwebview` |
-
-### 5 additional Qt6 elements use `git_repo` and ARE auto-tracked:
-
-| Element | Track branch |
-|---------|-------------|
-| `qt6-qtgrpc.bst` | `dev` |
-| `qt6-qtquick3d.bst` | `dev` |
-| `qt6-qtquick3dphysics.bst` | `dev` |
-| `qt6-qtquickeffectmaker.bst` | `dev` |
-| `qt6-qtwebengine.bst` | `dev` |
-
-### How to bump Qt6
-
-1. Check for new releases at **https://download.qt.io/official_releases/qt/6.10/**
-   (or the next minor series like `6.11/`).
-
-2. For each of the 25 tar-based elements, update three things in the `.bst`
-   file:
-
-   - The **URL** — change the version numbers in the path:
-     ```yaml
-     url: qt:6.10/6.10.4/submodules/qtbase-everywhere-src-6.10.4.tar.xz
-     ```
-
-   - The **ref** (SHA256 checksum) — download and hash the new tarball:
-     ```bash
-     curl -sL https://download.qt.io/official_releases/qt/6.10/6.10.4/submodules/qtbase-everywhere-src-6.10.4.tar.xz \
-       | sha256sum
-     ```
-
-   - If the major.minor changed (e.g., 6.10 to 6.11), update the directory
-     component in the URL too.
-
-3. A helper script to update all 25 elements at once:
-
-   ```bash
-   cd /path/to/kde-build-meta-x
-
-   OLD_VER="6.10.3"
-   NEW_VER="6.10.4"
-   OLD_SERIES="6.10"
-   NEW_SERIES="6.10"
-
-   for bst in elements/kde/qt6/qt6-*.bst; do
-     # Skip git_repo-based elements
-     if grep -q 'kind: git_repo' "$bst"; then continue; fi
-
-     # Extract module name from URL
-     MODULE=$(grep -oP '(?<=submodules/)\S+(?=-everywhere)' "$bst")
-     if [ -z "$MODULE" ]; then continue; fi
-
-     # Download new tarball and compute SHA256
-     URL="https://download.qt.io/official_releases/qt/${NEW_SERIES}/${NEW_VER}/submodules/${MODULE}-everywhere-src-${NEW_VER}.tar.xz"
-     echo "Fetching $MODULE..."
-     NEW_SHA=$(curl -sfL "$URL" | sha256sum | cut -d' ' -f1)
-     if [ -z "$NEW_SHA" ] || [ "$NEW_SHA" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ]; then
-       echo "  FAILED: $URL not found or empty"
-       continue
-     fi
-
-     # Update the .bst file
-     sed -i "s|qt:${OLD_SERIES}/${OLD_VER}/submodules/${MODULE}-everywhere-src-${OLD_VER}|qt:${NEW_SERIES}/${NEW_VER}/submodules/${MODULE}-everywhere-src-${NEW_VER}|" "$bst"
-     sed -i "s|ref: .*|ref: ${NEW_SHA}|" "$bst"
-     echo "  Updated: $NEW_SHA"
-   done
-   ```
-
-4. Commit, push, and update the tromso junction (see section below).
-
-### After updating kde-build-meta-x, update the tromso junction
-
-```bash
-cd /path/to/kde-build-meta-x
-git add elements/kde/qt6/
-TMPDIR=/var/tmp git commit -m "Bump Qt6 to ${NEW_VER}"
-git push origin master
-
-SHA=$(git rev-parse HEAD)
-SHORT=$(git rev-parse --short=7 HEAD)
-curl -sL "https://github.com/whelanh/kde-build-meta-x/archive/${SHA}.tar.gz" \
-  -o /tmp/kbm.tar.gz
-NEW_REF=$(sha256sum /tmp/kbm.tar.gz | cut -d' ' -f1)
-BASEDIR=$(tar tzf /tmp/kbm.tar.gz | head -1 | sed 's|/$||')
-
-cd /path/to/tromso_x
-cat > elements/kde-build-meta.bst << EOF
-kind: junction
-description: Junction to whelanh/kde-build-meta-x (KDE Plasma 6 build metadata)
-
+```yaml
 sources:
-- kind: tar
-  url: github:whelanh/kde-build-meta-x/archive/${SHA}.tar.gz
-  ref: ${NEW_REF}
-  base-dir: ${BASEDIR}
-
-config:
-  options:
-    arch: "%{arch}"
-EOF
-
-TMPDIR=/var/tmp git add elements/kde-build-meta.bst
-TMPDIR=/var/tmp git commit -m "Update junction to kde-build-meta-x ${SHORT} (Qt6 ${NEW_VER})"
-git push origin main
+- kind: git_repo
+  url: github:qt/<module>.git
+  track: 'v6.*'
+  exclude:
+  - '*rc*'
+  - '*alpha*'
+  - '*beta*'
+  ref: v6.10.3-0-g<commit-sha>
 ```
 
 ---
@@ -285,6 +165,15 @@ grep -rl 'kind: patch' elements/kde/ elements/core-deps/
 Currently known:
 - `elements/kde/plasma/plasma-desktop.bst` — applies
   `patches/plasma-desktop/0001-fix-libinput-pkgconfig.patch`
+- `elements/kde/plasma/kwin.bst` — applies
+  `patches/kwin/0001-killer-no-x11.patch` (cmake option for window killer)
+  and `patches/kwin/0002-fix-missing-qqml-include.patch` (missing QtQml
+  header after framework tracking update)
+
+Note: Several freedesktop-sdk patches were removed from
+`patches/freedesktop-sdk/` because they modified `files/linux/fdsdk-config.sh`
+which drifts with each freedesktop-sdk update. The removed patches were
+aarch64-specific kernel config entries not needed for x86_64 builds.
 
 ### How to fix a patch conflict
 
@@ -429,29 +318,28 @@ automatically (e.g., 25.08.9 to 25.08.10).
 
 ## 7. PAT Token Rotation
 
-The `update-refs.yml` workflow uses two fine-grained PAT secrets stored at
+The `update-refs.yml` workflow uses one fine-grained PAT secret stored at
 **https://github.com/whelanh/tromso_x/settings/secrets/actions**:
 
 - `KBM_PUSH_TOKEN` — `Contents: Read and write` on `whelanh/kde-build-meta-x`
-- `TROMSO_PUSH_TOKEN` — `Contents: Read and write` and `Pull requests: Read and write` on `whelanh/tromso_x`
 
-`TROMSO_PUSH_TOKEN` is required because the repository currently does not allow
-the default `GITHUB_TOKEN` to create pull requests. Without it, the workflow
-will track refs but skip PR creation.
+PR creation on `tromso_x` uses the built-in `GITHUB_TOKEN` (no PAT needed).
+Ensure the repo setting at **Settings → Actions → General → Workflow
+permissions** is set to "Read and write permissions" with "Allow GitHub
+Actions to create and approve pull requests" checked.
 
-Fine-grained PATs have a maximum lifetime (default 90 days). When a token
-expires, the `update-refs.yml` workflow will fail at the matching push/PR step.
+Fine-grained PATs have a maximum lifetime (default 90 days). When
+`KBM_PUSH_TOKEN` expires, the workflow will fail at the "Commit and push
+kde-build-meta-x" step.
 
 ### To rotate
 
 1. Go to **https://github.com/settings/personal-access-tokens**
-2. Find the token you want to replace:
-   - `tromso-kbm-push` for `KBM_PUSH_TOKEN`
-   - `tromso-pr-push` (or equivalent) for `TROMSO_PUSH_TOKEN`
-3. Click **Regenerate** (or create a new token with the same settings)
-4. Copy the new token
-5. Go to **https://github.com/whelanh/tromso_x/settings/secrets/actions**
-6. Click **Update** on the matching secret and paste the new value
+2. Find `tromso-kbm-push` and click **Regenerate** (or create a new token
+   with the same settings)
+3. Copy the new token
+4. Go to **https://github.com/whelanh/tromso_x/settings/secrets/actions**
+5. Click **Update** on `KBM_PUSH_TOKEN` and paste the new value
 
 ### To avoid expiration entirely
 
