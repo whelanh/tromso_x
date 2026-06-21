@@ -161,7 +161,9 @@ jobs:
           ELEMENTS=""
           for dir in elements/tromso elements/gnomeos-deps; do
             if [ -d "$dir" ]; then
-              ELEMENTS="$ELEMENTS $(find "$dir" -name '*.bst' | sed 's|^elements/||' | sort)"
+              ELEMENTS="$ELEMENTS $(find "$dir" -name '*.bst' \
+                ! -name 'bootc.bst' \
+                | sed 's|^elements/||' | sort)"
             fi
           done
           if [ -n "$ELEMENTS" ]; then
