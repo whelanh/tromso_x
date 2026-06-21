@@ -6,6 +6,8 @@
 [`projectbluefin/dakota`](https://github.com/projectbluefin/dakota). It builds KDE Plasma 6 on top
 of freedesktop-sdk and publishes a bootable OCI image to `ghcr.io/tuna-os/tromso`.
 
+Tromso_x is a fork from the original Tromso with the aim of using the latest KDE, Qt6, and linux packages as soon as they are available to produce a "leading edge" rolling release.
+
 **Status: Builds successfully and boots to a working KDE Plasma 6 Wayland desktop.**
 
 ## Architecture
