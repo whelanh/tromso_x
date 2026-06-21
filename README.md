@@ -86,6 +86,9 @@ ssh -p 2222 root@127.0.0.1
 useradd -m -G video,render,input,audio -s /bin/zsh aurora
 echo 'aurora:aurora' | chpasswd
 
+# Port for VNC viewer
+127.0.0.1:5900
+
 ```
 
 ### Useful Justfile recipes
