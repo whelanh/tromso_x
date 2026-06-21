@@ -5,7 +5,7 @@ sources:
 - kind: git_repo
   url: github:ublue-os/brew.git
   track: main
-  ref: 63345f0264c11075678321a6afbccedaf78f1f5b
+  ref: 55f0e7542856b6e2e8703212b3e5d5d02f9b864f
 
 depends:
 - kde-build-meta.bst:freedesktop-sdk.bst:public-stacks/runtime-minimal.bst
