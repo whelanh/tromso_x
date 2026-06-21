@@ -429,23 +429,29 @@ automatically (e.g., 25.08.9 to 25.08.10).
 
 ## 7. PAT Token Rotation
 
-The `KBM_PUSH_TOKEN` secret stored at
-**https://github.com/whelanh/tromso_x/settings/secrets/actions** is a
-GitHub fine-grained PAT with `Contents: Read and write` permission on
-`whelanh/kde-build-meta-x`.
+The `update-refs.yml` workflow uses two fine-grained PAT secrets stored at
+**https://github.com/whelanh/tromso_x/settings/secrets/actions**:
 
-Fine-grained PATs have a maximum lifetime (default 90 days). When the token
-expires, the `update-refs.yml` workflow will fail at the "Commit and push
-kde-build-meta-x" step.
+- `KBM_PUSH_TOKEN` — `Contents: Read and write` on `whelanh/kde-build-meta-x`
+- `TROMSO_PUSH_TOKEN` — `Contents: Read and write` and `Pull requests: Read and write` on `whelanh/tromso_x`
+
+`TROMSO_PUSH_TOKEN` is required because the repository currently does not allow
+the default `GITHUB_TOKEN` to create pull requests. Without it, the workflow
+will track refs but skip PR creation.
+
+Fine-grained PATs have a maximum lifetime (default 90 days). When a token
+expires, the `update-refs.yml` workflow will fail at the matching push/PR step.
 
 ### To rotate
 
 1. Go to **https://github.com/settings/personal-access-tokens**
-2. Find `tromso-kbm-push` and click **Regenerate** (or create a new token
-   with the same settings)
-3. Copy the new token
-4. Go to **https://github.com/whelanh/tromso_x/settings/secrets/actions**
-5. Click **Update** on `KBM_PUSH_TOKEN` and paste the new value
+2. Find the token you want to replace:
+   - `tromso-kbm-push` for `KBM_PUSH_TOKEN`
+   - `tromso-pr-push` (or equivalent) for `TROMSO_PUSH_TOKEN`
+3. Click **Regenerate** (or create a new token with the same settings)
+4. Copy the new token
+5. Go to **https://github.com/whelanh/tromso_x/settings/secrets/actions**
+6. Click **Update** on the matching secret and paste the new value
 
 ### To avoid expiration entirely
 
