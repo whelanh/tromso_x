@@ -1,50 +1,66 @@
-# Manual Update Procedures
+# Update Procedures
 
-The `update-refs.yml` workflow automates tracking for most elements via
-`bst source track`. This document covers the components that **cannot** be
-auto-tracked and require manual intervention.
+This document covers how to keep the tromso_x image up to date with
+the latest KDE, Qt, and freedesktop-sdk releases.
 
 ---
 
 ## Table of Contents
 
-1. [How It Works — GitHub-Hosted CI + Local Builds](#1-how-it-works)
+1. [How It Works — Local Tracking Script](#1-how-it-works)
 2. [Qt6 Tracking Notes](#2-qt6-tracking-notes)
 3. [Intentionally Pinned Elements](#3-intentionally-pinned-elements)
 4. [Patch Conflicts After Tracking](#4-patch-conflicts-after-tracking)
 5. [Adding New KDE Packages](#5-adding-new-kde-packages)
 6. [Freedesktop-SDK Major Version Bumps](#6-freedesktop-sdk-major-version-bumps)
-7. [PAT Token Rotation](#7-pat-token-rotation)
+7. [Git Authentication](#7-git-authentication)
 
 ---
 
-## 1. How It Works — GitHub-Hosted CI + Local Builds
+## 1. How It Works — Local Tracking Script
 
-The `update-refs.yml` workflow runs on a free GitHub-hosted `ubuntu-24.04`
-runner. It only does lightweight `bst source track` operations (git
-metadata fetches), not full builds. The workflow:
+Ref tracking is done locally using `scripts/track-refs-local.sh`. This
+is more reliable than CI-based tracking because `bst source track` needs
+to query ~200 git repos (KDE Invent, GitHub, freedesktop GitLab), which
+hits rate limits on CI runners.
 
-1. Clones `whelanh/kde-build-meta-x`
-2. Runs `bst source track` to update all `ref:` fields to latest upstream commits
-3. Pushes the updated refs to `kde-build-meta-x`
-4. Updates the junction in `tromso_x` and opens a PR
+### To update all refs
 
-### Your local workflow
+```bash
+bash scripts/track-refs-local.sh
+```
 
-1. **Merge the PR** that the workflow created on `tromso_x`
-2. **Pull locally**: `git pull origin main`
-3. **Clear the stale junction cache**: `rm -rf .bst/staged-junctions/kde-build-meta.bst`
-4. **Build**: `just build` (or `just bst-build` for background builds)
+This single command:
+1. Clones/updates `whelanh/kde-build-meta-x` to `/tmp/kde-build-meta-x-track`
+2. Runs `bst source track` on all KDE, Qt6, core-deps, and freedesktop-sdk elements
+3. Commits and pushes updated refs to `kde-build-meta-x`
+4. Updates the junction in `tromso_x`, clears caches, commits, and pushes
 
-The workflow runs weekly (Monday 04:00 UTC) or on-demand via the Actions
-tab → "Track Upstream Refs" → "Run workflow".
+### After tracking, build locally
+
+```bash
+BST_FLAGS="--no-interactive" just bst build oci/tromso.bst
+```
+
+### CI workflow (backup)
+
+The `update-refs.yml` GitHub Actions workflow still exists but its
+schedule is disabled. It can be triggered manually via **Actions →
+Track Upstream Refs → Run workflow** if needed, but the local script
+is preferred because CI tracking is unreliable for this many elements.
+
+### Prerequisites
+
+- `podman` installed (runs the BST container)
+- SSH access to `github.com:whelanh/kde-build-meta-x.git`
+- Run from the `tromso_x` project root
 
 ---
 
 ## 2. Qt6 Tracking Notes
 
 All 30 Qt6 elements now use `git_repo` sources with `track: 'v6.*'` and
-are **automatically tracked** by the `update-refs.yml` workflow alongside
+are **automatically tracked** by `scripts/track-refs-local.sh` alongside
 KDE frameworks, plasma, and apps. Pre-release tags (`*rc*`, `*alpha*`,
 `*beta*`) are excluded.
 
@@ -283,7 +299,7 @@ track: freedesktop-sdk-25.08*
 ref: freedesktop-sdk-25.08.9-0-g3361ede6aa...
 ```
 
-The `update-refs.yml` workflow handles **point releases** within 25.08
+The `scripts/track-refs-local.sh` script handles **point releases** within 25.08
 automatically (e.g., 25.08.9 to 25.08.10).
 
 ### When a new major version ships (e.g., 26.08)
@@ -316,33 +332,22 @@ automatically (e.g., 25.08.9 to 25.08.10).
 
 ---
 
-## 7. PAT Token Rotation
+## 7. Git Authentication
 
-The `update-refs.yml` workflow uses one fine-grained PAT secret stored at
+### Local script (`scripts/track-refs-local.sh`)
+
+The local script uses **SSH** to push to both repos. Ensure your SSH key
+is registered at **https://github.com/settings/keys**.
+
+### CI workflow (backup)
+
+If you use the CI workflow as a backup, it needs a fine-grained PAT stored
+as `KBM_PUSH_TOKEN` at
 **https://github.com/whelanh/tromso_x/settings/secrets/actions**:
 
-- `KBM_PUSH_TOKEN` — `Contents: Read and write` on `whelanh/kde-build-meta-x`
+- `Contents: Read and write` on `whelanh/kde-build-meta-x`
 
-PR creation on `tromso_x` uses the built-in `GITHUB_TOKEN` (no PAT needed).
-Ensure the repo setting at **Settings → Actions → General → Workflow
-permissions** is set to "Read and write permissions" with "Allow GitHub
-Actions to create and approve pull requests" checked.
-
-Fine-grained PATs have a maximum lifetime (default 90 days). When
-`KBM_PUSH_TOKEN` expires, the workflow will fail at the "Commit and push
-kde-build-meta-x" step.
-
-### To rotate
-
-1. Go to **https://github.com/settings/personal-access-tokens**
-2. Find `tromso-kbm-push` and click **Regenerate** (or create a new token
-   with the same settings)
-3. Copy the new token
-4. Go to **https://github.com/whelanh/tromso_x/settings/secrets/actions**
-5. Click **Update** on `KBM_PUSH_TOKEN` and paste the new value
-
-### To avoid expiration entirely
-
-Set the PAT expiration to "No expiration" when creating it (available under
-fine-grained PATs if your account permits it). This is less secure but
-eliminates the rotation burden for a personal project.
+Fine-grained PATs have a maximum lifetime (default 90 days). Set
+expiration to "No expiration" for a personal project, or rotate by
+regenerating at **https://github.com/settings/personal-access-tokens**
+and updating the secret.

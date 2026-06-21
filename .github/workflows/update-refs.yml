@@ -1,8 +1,10 @@
 name: Track Upstream Refs
 
 on:
-  schedule:
-    - cron: '0 4 * * 1'   # Weekly — Monday 04:00 UTC
+  # Schedule disabled — use scripts/track-refs-local.sh instead (more reliable).
+  # To re-enable: uncomment the schedule block below.
+  # schedule:
+  #   - cron: '0 4 * * 1'   # Weekly — Monday 04:00 UTC
   workflow_dispatch:
     inputs:
       track_kbm:
