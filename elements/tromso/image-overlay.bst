@@ -5,7 +5,7 @@ sources:
 - kind: git_repo
   url: github:ublue-os/aurora.git
   track: main
-  ref: 3726a5eca00101ee725b0f52c65572bf6872dbdd
+  ref: 02f17904bdf09200e517e03afb1f833568d11afc
 
 depends:
 - kde-build-meta.bst:freedesktop-sdk.bst:public-stacks/runtime-minimal.bst
