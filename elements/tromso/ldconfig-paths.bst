@@ -13,6 +13,7 @@ config:
     install -Dm644 /dev/stdin "%{install-root}/etc/ld.so.conf.d/10-usr-lib.conf" <<'EOF'
     /usr/lib
     /usr/lib64
+    /usr/lib/x86_64-linux-gnu/GL/default/lib
     EOF
 
 public:
