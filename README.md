@@ -55,7 +55,12 @@ cd tromso
 
 # Background build with live log tailing
 BST_FLAGS="--max-jobs $(nproc) --fetchers $(nproc)" just bst-build
-BST_FLAGS="--no-interactive" just bst build oci/tromso.bst && just export
+BST_FLAGS="--max-jobs $(nproc) --fetchers $(nproc)--no-interactive" just bst build oci/tromso.bst && just export
+
+# Push to your container registry after export
+sudo podman login ghcr.io --username whelanh
+sudo podman tag tromso:latest ghcr.io/whelanh/tromso_x:latest
+sudo podman push ghcr.io/whelanh/tromso_x:latest
 
 # Or foreground build + OCI export
 just build
@@ -67,7 +72,7 @@ just build
 # Generate a bootable disk image (requires a completed build)
 just generate-bootable-image
 
-# useful command to make bootable.raw much smaller:
+# useful command to make bootable.raw much smaller for use with Virt Manager:
 qemu-img convert -f raw -O qcow2 bootable.raw bootable.qcow2
 
 # Boot the image in QEMU
@@ -75,6 +80,12 @@ just boot-vm
 
 # SSH in (password: aurora)
 ssh -p 2222 root@localhost
+
+# After booting with just boot-vm, SSH in and run to create a new user for graphical login:
+ssh -p 2222 root@127.0.0.1
+useradd -m -G video,render,input,audio -s /bin/zsh aurora
+echo 'aurora:aurora' | chpasswd
+
 ```
 
 ### Useful Justfile recipes
