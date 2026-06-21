@@ -5,7 +5,7 @@ sources:
 - kind: git_repo
   url: github:projectbluefin/common.git
   track: main
-  ref: f5bcc3ddf2ee09c9489326780bd1e5324a48fb92
+  ref: 36cb739a994392fc2a3b8c85c915daa26c781e1b
 
 depends:
 - kde-build-meta.bst:freedesktop-sdk.bst:public-stacks/runtime-minimal.bst
