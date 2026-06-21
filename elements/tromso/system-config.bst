@@ -154,7 +154,7 @@ config:
     install -Dm644 /dev/stdin "%{install-root}/usr/lib/systemd/system/sddm.service.d/debug.conf" <<'EOF'
     [Service]
     Environment=QT_QUICK_BACKEND=software
-    Environment=QT_LOGGING_RULES=*.debug=true
+    Environment=KWIN_COMPOSE=Q
     StandardOutput=journal+console
     StandardError=journal+console
     EOF
@@ -177,6 +177,36 @@ config:
     ln -sf ../sddm.service "%{install-root}/usr/lib/systemd/system/display-manager.service"
     ln -sf ../sddm.service "%{install-root}/usr/lib/systemd/system/graphical.target.wants/sddm.service"
 
+  # ── SDDM PAM configs ───────────────────────────────────────────────
+  # Parent-layer PAM files (/etc/pam.d/sddm*) are lost during bootc
+  # deployment when the child layer also has /etc/pam.d/ entries.
+  # Duplicate them here so they survive in the child layer.
+  - |
+    install -Dm644 /dev/stdin "%{install-root}/etc/pam.d/sddm-greeter" <<'EOF'
+    auth     required pam_env.so
+    auth     required pam_permit.so
+    account  required pam_permit.so
+    session  required pam_unix.so
+    -session optional pam_systemd.so
+    EOF
+
+  - |
+    install -Dm644 /dev/stdin "%{install-root}/etc/pam.d/sddm" <<'EOF'
+    auth     include  system-auth
+    account  include  system-auth
+    password include  system-auth
+    session  include  system-auth
+    EOF
+
+  - |
+    install -Dm644 /dev/stdin "%{install-root}/etc/pam.d/sddm-autologin" <<'EOF'
+    auth     required pam_env.so
+    auth     required pam_permit.so
+    account  include  system-auth
+    password include  system-auth
+    session  include  system-auth
+    EOF
+
   # ── systemd default target ──────────────────────────────────────────
   - |
     ln -sf graphical.target "%{install-root}/usr/lib/systemd/system/default.target"
@@ -197,10 +227,10 @@ config:
     session    optional    pam_keyinit.so force revoke
     session    required    pam_unix.so
     session    optional    pam_umask.so silent
+    -session   optional    pam_systemd.so
     EOF
 
-  # ── sshd_config ──────────────────────────────────────────────────────
-  # A minimal default sshd_config.  Without this sshd refuses to start.
+  # ── sshd_config ──────────────────────────────────────────────────────  # A minimal default sshd_config.  Without this sshd refuses to start.
   # PermitRootLogin is enabled for the initial Aurora image; users should
   # create a regular account and disable root SSH in production.
   - |
@@ -445,6 +475,9 @@ public:
         - '%{sysconfdir}/pam.d/kde'
         - '%{sysconfdir}/pam.d/kde-fingerprint'
         - '%{sysconfdir}/pam.d/kde-smartcard'
+        - '%{sysconfdir}/pam.d/sddm'
+        - '%{sysconfdir}/pam.d/sddm-greeter'
+        - '%{sysconfdir}/pam.d/sddm-autologin'
         - '%{sysconfdir}/xdg/kscreenlockerrc'
         - '%{sysconfdir}/xdg/plasma-workspace/env/kde-settings.sh'
         - '%{datadir}/kde-settings/kde-profile/default/xdg/kdeglobals'

@@ -92,6 +92,17 @@ config:
       fi
       rm -rf /ld-merged /ld-work 2>/dev/null || true
     - |
+      mkdir -p /fc-work /fc-merged
+      if timeout 30 mount -t overlay overlay \
+           -o "lowerdir=/parent,upperdir=/layer,workdir=/fc-work" \
+           /fc-merged 2>/dev/null; then
+        timeout 60 chroot /fc-merged fc-cache -f 2>/dev/null || true
+        umount /fc-merged || true
+      else
+        timeout 60 chroot /layer fc-cache -f 2>/dev/null || true
+      fi
+      rm -rf /fc-merged /fc-work 2>/dev/null || true
+    - |
       # Force an explicit font family in the SDDM/Breeze QML that renders the
       # greeter text. Live guest testing showed this changes the framebuffer,
       # while rebuilding font cache alone did not.
