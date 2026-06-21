@@ -132,22 +132,6 @@ incompatibilities.
 `track:` to `Plasma/6.7` (or `master` if it stabilizes). Check the branch
 list at https://invent.kde.org/plasma/plasma-vault/-/branches.
 
-### kirigami-addons — `elements/kde/libs/kirigami-addons.bst`
-
-| Field | Value |
-|-------|-------|
-| `track` | `v1.12.0` |
-| `ref` | `v1.12.0-0-g6d2b5add1b...` |
-| Source | `kde:libraries/kirigami-addons.git` |
-| KDE Invent | https://invent.kde.org/libraries/kirigami-addons |
-
-**Why pinned:** Tracks a specific release tag. Newer versions may require
-newer Kirigami framework APIs.
-
-**When to bump:** Check for new tags at
-https://invent.kde.org/libraries/kirigami-addons/-/tags. Update `track:` to
-the new tag (e.g., `v1.13.0`) and verify the build succeeds.
-
 ### How to update a pinned element
 
 ```bash
@@ -179,17 +163,17 @@ grep -rl 'kind: patch' elements/kde/ elements/core-deps/
 ```
 
 Currently known:
-- `elements/kde/plasma/plasma-desktop.bst` — applies
-  `patches/plasma-desktop/0001-fix-libinput-pkgconfig.patch`
 - `elements/kde/plasma/kwin.bst` — applies
   `patches/kwin/0001-killer-no-x11.patch` (cmake option for window killer)
   and `patches/kwin/0002-fix-missing-qqml-include.patch` (missing QtQml
   header after framework tracking update)
 
-Note: Several freedesktop-sdk patches were removed from
-`patches/freedesktop-sdk/` because they modified `files/linux/fdsdk-config.sh`
-which drifts with each freedesktop-sdk update. The removed patches were
-aarch64-specific kernel config entries not needed for x86_64 builds.
+Note: Several patches were removed as upstream fixed the issues:
+- `patches/plasma-desktop/0001-fix-libinput-pkgconfig.patch` — fixed upstream
+- `patches/plasma-workspace/0003-skip-kwin-virtualkeyboard-dbus-interface.patch` — fixed upstream
+- `patches/kwin/0003-fix-vulkan-hpp-compat.patch` — resolved by updating vulkan-headers to 1.4.354
+- `patches/kwin/0004-remove-vulkan-assert-on-result.patch` — resolved by updating vulkan-headers
+- Several freedesktop-sdk kernel config patches — aarch64-specific, not needed for x86_64
 
 ### How to fix a patch conflict
 
