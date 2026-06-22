@@ -124,11 +124,18 @@ config:
       fi
       rm -rf /fc-merged /fc-work 2>/dev/null || true
     # Extract CA certificates in the target layer instead of the build sandbox.
-    # The initial_scripts from freedesktop-sdk run update-ca-trust inside the
-    # sandbox root, so the certs get lost. By chrooting into /layer, the PEM
-    # bundle is written to the correct location in /layer/etc/pki/ca-trust/...
+    # Since chroot is not permitted in this sandbox, and prepare-image.sh
+    # already ran update-ca-trust inside the sandbox root, we can just copy
+    # the generated certificates from the sandbox's /etc to the layer's /etc.
     - |
-      chroot /layer update-ca-trust extract
+      if [ -d /etc/pki/ca-trust/extracted ]; then
+        mkdir -p /layer/etc/pki/ca-trust/extracted
+        cp -a /etc/pki/ca-trust/extracted/. /layer/etc/pki/ca-trust/extracted/
+      fi
+      if [ -d /etc/ssl/certs ]; then
+        mkdir -p /layer/etc/ssl/certs
+        cp -a /etc/ssl/certs/. /layer/etc/ssl/certs/
+      fi
     - |
       # Force an explicit font family in the Breeze QML that renders the
       # greeter / lock-screen text. Live guest testing showed this changes the
