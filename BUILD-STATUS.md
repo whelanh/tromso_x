@@ -35,70 +35,68 @@ as the display manager with a service drop-in for software rendering in VMs.
 - Cross-checked against Arch PKGBUILD `depends()` for kde/apps + kde/plasma.
 
 #### 3. Empty Application Launcher + Sycoca / Desktop File Indexing (UNRESOLVED)
-**Status: Root cause under investigation. Multiple attempted fixes on live VM — none
-resolved the issue.**
+**Status: Root cause not determined. All pushed fixes verified on a fresh image
+(2026-06-22) — no improvement. Fresh-image theory ruled out.**
 
 **Symptoms:**
 - Panel launcher "All Applications" shows no entries
 - KRunner (Alt+F2) cannot find newly-installed apps (e.g. plasma-discover)
 - Discover → Installed category shows "Nothing Found"
 - System Settings → Default Apps doesn't recognize any installed apps
-- `kbuildsycoca6 --noincremental` runs without error but produces a sycoca cache
-  that doesn't include desktop-file entries
+- `kbuildsycoca6 --noincremental` runs without error but the sycoca cache is either
+  not being read or does not contain application entries
 
-**Diagnostics performed (on live VM via SSH):**
-- `/usr/share/applications/` — 142 `.desktop` files present and readable
-- `/etc/xdg/menus/applications.menu` — present with correct `<DefaultAppDirs/>` content
-- kded6 running, `XDG_DATA_DIRS` correctly set to `/usr/share:/usr/local/share`
-- `kbuildsycoca6` runs and produces a 405KB cache file (when run with
-  `LANG=C.UTF-8 XDG_DATA_DIRS`), but the launcher doesn't use it
-- Multiple cache files (227KB + 405KB) coexist; kded6 appears to rebuild a
-  smaller 227KB cache that lacks application entries, conflicting with the
-  manually-built 405KB one
-- `LANG=C` (not UTF-8) — Qt warns it switches to C.UTF-8 internally, but
-  this locale mismatch may cause silent failures during desktop file parsing
-- No CA certificates on the system (`/etc/ssl/certs/` empty) — causes
-  Discover SSL errors but is a separate issue from the empty launcher
+**Diagnostics performed (SSH on live VM):**
+- `/usr/share/applications/` — 142 `.desktop` files present and readable ✓
+- `/etc/xdg/menus/applications.menu` — present with correct `<DefaultAppDirs/>` content ✓
+- kded6 running with `XDG_DATA_DIRS=/usr/share:/usr/local/share` ✓
+- `XDG_SESSION_TYPE=wayland` on fresh image (was `tty` on older VM) ✓
+- `LANG=C.UTF-8` set in plasmashell environment (Qt still warns "Detected locale C") ✓
+- `kbuildsycoca6` produces a 405KB cache when run with `LANG=C.UTF-8 XDG_DATA_DIRS`,
+  but kded6 rebuilds a 227KB cache that overwrites it
+- `locale -a` confirms `C.utf8` and `en_US.utf8` are available on the system
+- No `kded_ksycoca` or sycoca-related kded6 modules found under `/usr/lib*/kded/`
 
-**Attempted fixes (all tested on live VM, none resolved the launcher issue):**
+**Comparison with working Fedora Kinoite system:**
+- Kinoite sycoca cache: 615–676KB vs Aurora's 405KB (manually built) / 227KB (kded6 auto-build)
+- Kinoite locale: `en_US.UTF-8` vs Aurora's `C.UTF-8`
+- Kinoite has full locale data installed
+- No significant structural differences in XDG variables or kded6 configuration
+
+**Attempted fixes (all verified on fresh build, none resolved the issue):**
 1. Install `/etc/xdg/menus/applications.menu` (the menu definition XML)
 2. Run `kbuildsycoca6 --noincremental` at OCI build time in overlay chroot
 3. Add XDG autostart `.desktop` that runs kbuildsycoca6 on user login
-4. Set `XDG_DATA_DIRS=/usr/share:/usr/local/share` system-wide via
-   `/etc/environment.d/50-aurora-xdg.conf`
+4. Set `XDG_DATA_DIRS=/usr/share:/usr/local/share` system-wide via `/etc/environment.d/`
 5. Delete old caches, rebuild with `LANG=C.UTF-8 XDG_DATA_DIRS`, restart plasmashell
 6. Rebuild cache, terminate session, log back in fresh
-7. Set `LANG=C.UTF-8` in the autostart Exec line alongside XDG_DATA_DIRS
-
-**Pushed build fixes (not yet verified with a fresh image):**
-- `system-config.bst`: applications.menu + XDG autostart + `/etc/environment.d`
-- `oci/tromso.bst`: applications.menu re-creation after prepare-image.sh,
-  CA trust store generation (`update-ca-certificates`), flatpak-system-helper enabled
-- `tromso/deps.bst`: `ca-certificates` added
+7. Set `LANG=C.UTF-8` + cache cleanup in autostart Exec, move to phase 2
+8. Download Mozilla CA bundle directly in OCI compose (curl -k to curl.se/ca/cacert.pem)
+9. Add `ca-certificates` element to deps.bst + `update-ca-certificates` overlay step
+   (fd-sdk certificate paths are Fedora-style `/etc/pki/`, which the compose drops)
+10. Rebuild on fresh image from scratch — no improvement on any issue
 
 **Working theories for root cause:**
-1. KDE Plasma 6 sycoca format changes — the cache built by kbuildsycoca6
-   may be in a format unrecognised by the running KDE session.
-2. Locale (`LANG=C`) causes silent failures in desktop-file XML parsing;
-   `C.UTF-8` is set but may not be sufficient without full locale data.
-3. Composefs/bootc filesystem — the `.desktop` files in the read-only
-   composefs layer may have metadata (xattrs, timestamps) that prevent
-   sycoca from correctly indexing them.
-4. Missing KDE infrastructure — some kded6 module or KService plugin that
-   bridges desktop files into the application model may not be loaded.
+1. The sycoca cache built by `kbuildsycoca6` is in a format that plasmashell / kded6
+   cannot read, possibly due to a KF6 version mismatch between build and runtime.
+2. Desktop-file XML parsing fails silently due to locale issues (`LANG=C` →
+   `C.UTF-8` fallback may not be sufficient; full `en_US.UTF-8` locale may be needed).
+3. Composefs/bootc filesystem metadata (xattrs, timestamps) causes sycoca to
+   reject desktop files from the read-only layer.
+4. A required KDE service plugin for application model bridging is not loaded
+   (no `kded_ksycoca` module found).
 
 **Recommended next investigative steps:**
-- Rebuild with latest pushed fixes and test on a FRESH image (not the
-  iteratively-modified VM which has accumulated conflicting state).
-- Run `strace` on `kbuildsycoca6` (needs `strace` in the build) to trace
-  which directories/files are actually opened during indexing.
-- Compare with a working KDE Linux base image (without Aurora layer) to
-  determine if the problem exists in the base image too.
-- Install full locale data (`glibc-locales` or similar) and test with
-  `LANG=en_US.UTF-8`.
-- Check if `kded_ksycoca` or equivalent module exists and is loaded.
-- Test running `plasmashell` with `QT_LOGGING_RULES=org.kde.ksycoca=true`
-  for debug output about cache loading.
+- Install full glibc locale data and test with `LANG=en_US.UTF-8`.
+- Run `strace kbuildsycoca6 --noincremental` to trace which files/dirs are accessed
+  during indexing (requires `strace` on the image).
+- Build and boot the KDE Linux base image (without Aurora layer) to determine if
+  the problem exists there too — if the base image works, the issue is in the
+  Aurora layer; if not, it's a KDE/fd-sdk integration issue.
+- Test `plasmashell` with `QT_LOGGING_RULES=org.kde.ksycoca=true` for debug output
+  about sycoca database loading.
+- Attempt building sycoca cache on a different system with the same KF6 versions
+  and transplanting the cache file.
 
 #### 4. bootc Deployment Loses `/etc` Files (PARTIALLY RESOLVED)
 Previously affected `/etc/pam.d/sddm*`, `/etc/xdg/menus/applications.menu`,
@@ -106,15 +104,26 @@ and `/etc/sddm.conf.d/wayland.conf`. SDDM configs eliminated by PLM migration.
 Applications menu now installed in child layer `/etc/xdg/menus/`.
 Remaining: `/etc/fonts/fonts.conf` — fontconfig config (still needs audit).
 
-#### 5. Locale Warnings / Missing CA Certificates (LOW — partially related to #3)
-- Qt reports: "Detected locale 'C' with character encoding 'ANSI_X3.4-1968'"
-- Locale `LANG=C` may contribute to sycoca parsing failures (see issue #3).
-- `C.UTF-8` fallback works but full locale data (`glibc-locales`) should be
-  installed and `LANG=en_US.UTF-8` set for production.
-- CA certificates: no root CAs installed (`/etc/ssl/certs/` empty) — causes
-  Discover/curl SSL verification failures.  Fix pushed: `ca-certificates`
-  added to deps.bst; `update-ca-certificates` run in oci compose.  Workaround:
-  `curl -k -o /etc/ssl/certs/ca-certificates.crt https://curl.se/ca/cacert.pem`
+#### 5. Missing CA Certificates / Locale (UNRESOLVED — partially related to #3)
+
+**CA Certificates:**
+- No root CA certificates on the system (`/etc/ssl/certs/` empty, no certs anywhere).
+- OpenSSL default path is `/etc/pki/tls` (Fedora-style).  The freedesktop-sdk
+  `ca-certificates.bst` element installs certs under `/etc/pki/ca-trust/...` but
+  the compose step drops `/etc` content — the certs never reach the final image.
+- Fixes attempted and deployed (neither worked on fresh build):
+  a) Added `ca-certificates` to `tromso/deps.bst` + overlay `update-ca-certificates` step
+  b) Direct download of Mozilla CA bundle via `curl` in `oci/tromso.bst`
+- **Workaround (manual)**: `curl -k -o /etc/ssl/certs/ca-certificates.crt https://curl.se/ca/cacert.pem`
+  This works when run manually on the VM — Discover SSL errors resolved, Flathub
+  remote add succeeds.  But the build-time `curl` in oci/tromso.bst runs inside
+  a container sandbox that may lack network access or `curl`.
+
+**Locale:**
+- Qt reports: "Detected locale 'C' with character encoding 'ANSI_X3.4-1968'".
+  `LANG=C.UTF-8` fallback works in-user-session (`locale -a` confirms `C.utf8`
+  and `en_US.utf8` are available).
+- May contribute to sycoca parsing failures (see issue #3).
 
 ---
 
@@ -129,14 +138,15 @@ ssh -p 2222 root@127.0.0.1
 useradd -m -G video,render,input,audio -s /bin/zsh aurora
 echo 'aurora:aurora' | chpasswd
 
-# 2. Download CA certificates (until ca-certificates + update-ca-trust fix
-#    in oci/tromso.bst takes effect in a fresh build):
+# 2. Download CA certificates (manual workaround — build-time fixes deployed
+#    but not working; see Known Issues #5):
+mkdir -p /etc/ssl/certs
 curl -k -o /etc/ssl/certs/ca-certificates.crt https://curl.se/ca/cacert.pem
 
 # 3. Application launcher / sycoca (UNRESOLVED — see Known Issues #3).
 #    The panel launcher and Discover's "Installed" view remain empty.
 #    Workaround: launch apps via Konsole or KRunner (Alt+F2) by binary name,
-#    e.g. `plasma-discover`, `dolphin`, `systemsettings`.
+#    e.g. plasma-discover, dolphin, systemsettings.
 ```
 
 ---
