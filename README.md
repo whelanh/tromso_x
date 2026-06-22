@@ -14,7 +14,7 @@ The workflow is done locally on your own machine and is described in [MANUAL_UPD
 
 **Status: 6/21/2026: Builds successfully and boots to a working KDE Plasma 6.8 Dev Wayland desktop., However there are remaining issues to be fixed that I will tackle summarized in [BUILD-STATUS.md](https://github.com/whelanh/tromso_x/blob/main/BUILD-STATUS.md)**
 
-<img width="1339" height="854" alt="Screenshot_20260622_070630" src="https://github.com/user-attachments/assets/e915436d-de79-49a9-a883-523590974270" />
+<img width="2641" height="1798" alt="Screenshot_20260622_131917" src="https://github.com/user-attachments/assets/1944b7d2-b36b-4f53-a018-ed856f9f42f0" />
 <img width="1250" height="854" alt="Screenshot_20260622_070727" src="https://github.com/user-attachments/assets/853d8c4e-eee8-4568-be45-bc5e9ff90cad" />
 
 
