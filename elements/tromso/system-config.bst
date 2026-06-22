@@ -367,6 +367,27 @@ config:
     Timeout=0
     EOF
 
+  # ── Application menu definition ──────────────────────────────────────
+  # Without /etc/xdg/menus/applications.menu the KDE application launcher
+  # ("All Applications") shows no entries, even though .desktop files exist
+  # in /usr/share/applications/ and KRunner (Alt+F2) can launch them.
+  # This minimal menu includes every installed application.
+  - |
+    install -d "%{install-root}/etc/xdg/menus"
+    install -Dm644 /dev/stdin "%{install-root}/etc/xdg/menus/applications.menu" <<'EOF'
+    <!DOCTYPE Menu PUBLIC "-//freedesktop//DTD Menu 1.0//EN"
+      "http://www.freedesktop.org/standards/menu-spec/menu-1.0.dtd">
+    <Menu>
+      <Name>Applications</Name>
+      <DefaultAppDirs/>
+      <DefaultDirectoryDirs/>
+      <DefaultMergeDirs/>
+      <Include>
+        <All/>
+      </Include>
+    </Menu>
+    EOF
+
   # ── Mask unused services ────────────────────────────────────────────
   # Masking in /usr/lib is insufficient because freedesktop-sdk layers can
   # overwrite it during OCI layer merging.
@@ -437,5 +458,6 @@ public:
         - '%{sysconfdir}/pam.d/kde-fingerprint'
         - '%{sysconfdir}/pam.d/kde-smartcard'
         - '%{sysconfdir}/xdg/kscreenlockerrc'
+        - '%{sysconfdir}/xdg/menus/applications.menu'
         - '%{sysconfdir}/xdg/plasma-workspace/env/kde-settings.sh'
         - '%{datadir}/kde-settings/kde-profile/default/xdg/kdeglobals'

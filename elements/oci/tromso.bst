@@ -104,6 +104,18 @@ config:
       fi
       rm -rf /fc-merged /fc-work 2>/dev/null || true
     - |
+      # Pre-build the KDE service cache (kbuildsycoca6) in the merged rootfs so
+      # the application launcher menu picks up all .desktop files at first boot.
+      # Uses the same overlay strategy as ldconfig and fc-cache above.
+      mkdir -p /sycoca-work /sycoca-merged
+      if timeout 30 mount -t overlay overlay \
+           -o "lowerdir=/parent,upperdir=/layer,workdir=/sycoca-work" \
+           /sycoca-merged 2>/dev/null; then
+        timeout 120 chroot /sycoca-merged /usr/libexec/kf6/kbuildsycoca6 --noincremental 2>/dev/null || true
+        umount /sycoca-merged || true
+      fi
+      rm -rf /sycoca-merged /sycoca-work 2>/dev/null || true
+    - |
       # Force an explicit font family in the Breeze QML that renders the
       # greeter / lock-screen text. Live guest testing showed this changes the
       # framebuffer, while rebuilding font cache alone did not.  These

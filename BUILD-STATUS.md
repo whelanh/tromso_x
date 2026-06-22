@@ -7,65 +7,51 @@ Last updated: 2026-06-22
 ### Working
 - **Full build completes** — 1169 elements build successfully
 - **KDE Plasma 6.8 Dev desktop** loads with proper fonts and wallpaper
-- **SDDM login screen** renders correctly (with manual workarounds)
+- **plasma-login-manager** login screen works — SDDM fully replaced (see fixed #1)
 - **Network, System Settings** functional
 - **Qt6 6.11.1** auto-tracked via git_repo with `track: 'v6.*'`
 - **KDE Frameworks/Plasma/Apps** tracked to latest master
 - **Vulkan-headers 1.4.354** override resolves kwin RAII compat issues
 - **Local tracking script** (`scripts/track-refs-local.sh`) reliably updates all refs
 - **OCI image** builds correctly — all fixes verified inside the container
+- **Runtime dependency audit complete** — kde/apps and kde/plasma elements now declare
+  app-specific runtime libs in `depends:` (cross-checked against Arch PKGBUILD).
 
 ### Known Issues (Priority Order)
 
-#### 1. plasma-login-manager Migration (HIGH PRIORITY)
-SDDM is being replaced by `plasma-login-manager` in upstream KDE. We should
-migrate BEFORE investing more time in SDDM workarounds. All dependencies
-already exist in the build:
-- PlasmaQuick (`kde/plasma/libplasma.bst`)
-- LayerShellQt (`kde/plasma/layer-shell-qt.bst`)
-- LibKWorkspace (`kde/plasma/plasma-workspace.bst`)
-- KF6Screen (`kde/plasma/libkscreen.bst`)
-- PAM, systemd, xau (freedesktop-sdk)
+#### 1. plasma-login-manager Migration (FIXED 2026-06-22)
+SDDM replaced by `plasma-login-manager`. Element `kde/plasma/plasma-login-manager.bst`
+builds and links cleanly (KCMUtils + libPlasma link-closure build-depends resolved).
+PLM ships its own PAM configs to `/usr/lib/pam.d/` (immutable `/usr`), eliminating the
+SDDM `/etc/pam.d/sddm*` bootc workaround entirely. System-config wires `plasmalogin.service`
+as the display manager with a service drop-in for software rendering in VMs.
 
-Source: https://invent.kde.org/plasma/plasma-login-manager
-- Requires Qt >= 6.10.0 ✓, KF6 >= 6.26.0 ✓
-- Has own PAM configs, systemd service, sysusers.d entries
-- Eliminates SDDM PAM workaround entirely
+#### 2. Runtime Dependency Audit (FIXED 2026-06-22)
+- `konsole` → `core-deps/libssh.bst` runtime dep (fixed upstream)
+- `kcalc` → gmp/mpfr/mpc runtime deps added to `depends:`
+- `gwenview` → jpeg/png/tiff/lcms/exiv2, `okular` → libtiff, `kate` → gpgmepp,
+  `kdeconnect` → libei/libevdev/libfakekey, `ark` → libarchive,
+  `libksysguard` → libnl, `kpipewire` → ffmpeg, `spectacle` → ffmpeg/libva
+- Cross-checked against Arch PKGBUILD `depends()` for kde/apps + kde/plasma.
 
-#### 2. Runtime Dependency Audit (HIGH)
-Many elements use `build-depends` for libraries that should be `depends`
-(runtime). This causes "cannot open shared library" errors at runtime:
-- `konsole` → needs `libssh.so.4` at runtime (FIXED in latest commit)
-- `kcalc` → needs `libmpc.so.3` at runtime (NOT YET FIXED)
-- Likely many more — need systematic audit
+#### 3. Empty Application Launcher + Missing Default Apps (FIX PENDING BUILD)
+The "All Applications" launcher is empty and System Settings → Default Apps doesn't
+recognize installed KDE apps (terminal, file manager) because:
+- `/etc/xdg/menus/applications.menu` is missing → the menu system has no definition to
+  categorize applications. KRunner (Alt+F2) works because it queries .desktop files
+  directly without the menu hierarchy.
+- `kbuildsycoca6` has not been run to index the .desktop files into the service cache.
 
-**Pattern**: In the original gnome-build-meta, many libraries were
-implicitly available through the platform runtime. Our fork's layer
-composition doesn't include them implicitly. Each element needs explicit
-`depends:` entries for all runtime libraries.
+**Fix applied** (commit cef4521+): `system-config.bst` now installs `applications.menu`
+to `/etc/xdg/menus/` (child layer, survives bootc), and `oci/tromso.bst` runs
+`kbuildsycoca6 --noincremental` in the merged rootfs at OCI assembly time. Pending
+build + VM verification.
 
-**Recommended approach**: For each KDE app/component, check Arch Linux
-PKGBUILD `depends()` and ensure matching `depends:` entries in the `.bst`
-file.
-
-#### 3. bootc Deployment Loses `/etc` Files (MEDIUM)
-When `bootc install to-disk` deploys the OCI image, parent-layer `/etc`
-files are lost when the child layer also has entries in `/etc`. Affected:
-- `/etc/pam.d/sddm*` — SDDM PAM configs (will be eliminated by plasma-login-manager)
-- `/etc/fonts/fonts.conf` — fontconfig config
-- `/etc/xdg/menus/applications.menu` — KDE app menu definition
-- `/etc/sddm.conf.d/wayland.conf` — SDDM Wayland config
-
-**Current workaround**: Manual fix script after each boot (see below).
-**Proper fix**: Move configs to `/usr/lib/` paths (immutable, survives
-deployment) or ensure they're created in system-config.bst (child layer).
-plasma-login-manager migration may eliminate most of these.
-
-#### 4. Application Launcher Empty (MEDIUM)
-The KDE application launcher shows no apps because:
-- `/etc/xdg/menus/applications.menu` is missing (bootc deployment issue)
-- `kbuildsycoca6` needs to be run after creating the menu file
-- May also need `plasmashell` restart to pick up changes
+#### 4. bootc Deployment Loses `/etc` Files (PARTIALLY RESOLVED)
+Previously affected `/etc/pam.d/sddm*`, `/etc/xdg/menus/applications.menu`,
+and `/etc/sddm.conf.d/wayland.conf`. SDDM configs eliminated by PLM migration.
+Applications menu now installed in child layer `/etc/xdg/menus/`.
+Remaining: `/etc/fonts/fonts.conf` — fontconfig config (still needs audit).
 
 #### 5. Locale Warnings (LOW)
 Qt reports: "Detected locale 'C' with character encoding 'ANSI_X3.4-1968'".
@@ -76,72 +62,23 @@ Not a blocker but should be fixed by installing locale data or setting
 
 ## Post-Boot Workaround Script
 
-Until the above issues are fixed in the build, run this after each
-`just generate-bootable-image` + `just boot-vm`:
+Most previous workarounds are now baked into the build (applications.menu,
+kbuildsycoca6, plasma-login-manager PAM configs).  After each
+`just generate-bootable-image` + `just boot-vm`, only the user creation
+step is still needed:
 
 ```bash
 ssh -p 2222 root@127.0.0.1
 
-# 1. SDDM PAM configs (lost during bootc deployment)
-cat > /etc/pam.d/sddm-greeter << 'EOF'
-auth     required pam_env.so
-auth     required pam_permit.so
-account  required pam_permit.so
-session  required pam_unix.so
--session optional pam_systemd.so
-EOF
-
-cat > /etc/pam.d/sddm << 'EOF'
-auth     include  system-auth
-account  include  system-auth
-password include  system-auth
-session  include  system-auth
-EOF
-
-cat > /etc/pam.d/sddm-autologin << 'EOF'
-auth     required pam_env.so
-auth     required pam_permit.so
-account  include  system-auth
-password include  system-auth
-session  include  system-auth
-EOF
-
-# 2. SDDM service drop-in (writable /etc override for immutable /usr)
-mkdir -p /etc/systemd/system/sddm.service.d
-cat > /etc/systemd/system/sddm.service.d/override.conf << 'EOF'
-[Service]
-Environment=QT_QUICK_BACKEND=software
-Environment=KWIN_COMPOSE=Q
-StandardOutput=journal+console
-StandardError=journal+console
-EOF
-
-# 3. Application menu definition
-cat > /etc/xdg/menus/applications.menu << 'EOF'
-<!DOCTYPE Menu PUBLIC "-//freedesktop//DTD Menu 1.0//EN"
-  "http://www.freedesktop.org/standards/menu-spec/menu-1.0.dtd">
-<Menu>
-  <Name>Applications</Name>
-  <DefaultAppDirs/>
-  <DefaultDirectoryDirs/>
-  <DefaultMergeDirs/>
-  <Include>
-    <All/>
-  </Include>
-</Menu>
-EOF
-
-# 4. Create user
+# Create user (still manual until first-boot user setup is automated)
 useradd -m -G video,render,input,audio -s /bin/zsh aurora
 echo 'aurora:aurora' | chpasswd
 
-# 5. Restart
-systemctl daemon-reload
-systemctl restart sddm
-
-# 6. After logging in as aurora, rebuild app cache:
-# ssh -p 2222 aurora@127.0.0.1
-# kbuildsycoca6 --noincremental
+# The application menu and kbuildsycoca6 cache are now pre-built in the
+# image.  If the launcher still shows no apps after the next build, run:
+#   ssh -p 2222 aurora@127.0.0.1
+#   kbuildsycoca6 --noincremental
+#   systemctl --user restart plasma-plasmashell
 ```
 
 ---
