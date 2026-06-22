@@ -123,14 +123,12 @@ config:
         timeout 60 chroot /layer fc-cache -f 2>/dev/null || true
       fi
       rm -rf /fc-merged /fc-work 2>/dev/null || true
-    # Download the Mozilla CA certificate bundle directly.  The
-    # freedesktop-sdk ca-certificates element installs certs under
-    # /etc/pki/... (Fedora paths), but the compose step drops /etc
-    # content so they never reach the final image.  --insecure is
-    # required here because no CA bundle exists yet.
+    # Extract CA certificates in the target layer instead of the build sandbox.
+    # The initial_scripts from freedesktop-sdk run update-ca-trust inside the
+    # sandbox root, so the certs get lost. By chrooting into /layer, the PEM
+    # bundle is written to the correct location in /layer/etc/pki/ca-trust/...
     - |
-      curl -LksSf -o /layer/etc/ssl/certs/ca-certificates.crt \
-        https://curl.se/ca/cacert.pem 2>/dev/null || true
+      chroot /layer update-ca-trust extract
     - |
       # Force an explicit font family in the Breeze QML that renders the
       # greeter / lock-screen text. Live guest testing showed this changes the

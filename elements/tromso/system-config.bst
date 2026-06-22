@@ -388,6 +388,10 @@ config:
     </Menu>
     EOF
 
+    # Symlink for KDE Plasma 6 XDG_MENU_PREFIX
+    ln -s applications.menu "%{install-root}/etc/xdg/menus/plasma-applications.menu"
+    ln -s applications.menu "%{install-root}/etc/xdg/menus/kf6-applications.menu"
+
     install -Dm644 /dev/stdin "%{install-root}/etc/xdg/autostart/aurora-sycoca.desktop" <<'EOF'
     [Desktop Entry]
     Type=Application
@@ -477,6 +481,8 @@ public:
         - '%{sysconfdir}/pam.d/kde-smartcard'
         - '%{sysconfdir}/xdg/kscreenlockerrc'
         - '%{sysconfdir}/xdg/menus/applications.menu'
+        - '%{sysconfdir}/xdg/menus/plasma-applications.menu'
+        - '%{sysconfdir}/xdg/menus/kf6-applications.menu'
         - '%{sysconfdir}/xdg/autostart/aurora-sycoca.desktop'
         - '%{sysconfdir}/environment.d/50-aurora-xdg.conf'
         - '%{sysconfdir}/xdg/plasma-workspace/env/kde-settings.sh'
