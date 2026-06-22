@@ -12,7 +12,12 @@ Tromso_x's companion repo is [whelanh/kde-build-meta-x](https://github.com/whela
 
 The workflow is done locally on your own machine and is described in [MANUAL_UPDATES.md](https://github.com/whelanh/tromso_x/blob/main/MANUAL-UPDATES.md)
 
-**Status: Builds successfully and boots to a working KDE Plasma 6 Wayland desktop.**
+**Status: 6/21/2026: Builds successfully and boots to a working KDE Plasma 6.8 Dev Wayland desktop., However there are substantial remaining issues to be fixed that I will tackle summarized in [BUILD-STATUS.md](https://github.com/whelanh/tromso_x/blob/main/BUILD-STATUS.md)**
+
+<img width="1339" height="854" alt="Screenshot_20260622_070630" src="https://github.com/user-attachments/assets/e915436d-de79-49a9-a883-523590974270" />
+<img width="1250" height="854" alt="Screenshot_20260622_070727" src="https://github.com/user-attachments/assets/853d8c4e-eee8-4568-be45-bc5e9ff90cad" />
+
+
 
 ## Architecture
 
