@@ -15,6 +15,9 @@ depends:
   # accountsservice: required by the login manager to list users and manage sessions
   - kde-build-meta.bst:core-deps/accountsservice.bst
 
+  # CA certificates: required by Discover (Flatpak ODRS SSL) and any TLS client
+  - kde-build-meta.bst:freedesktop-sdk.bst:components/ca-certificates.bst
+
   # System configuration: dbus units, system users, sshd, networkd DHCP
   - tromso/system-config.bst
 

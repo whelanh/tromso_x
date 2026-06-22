@@ -388,6 +388,15 @@ config:
     </Menu>
     EOF
 
+    install -Dm644 /dev/stdin "%{install-root}/etc/xdg/autostart/aurora-sycoca.desktop" <<'EOF'
+    [Desktop Entry]
+    Type=Application
+    Name=Rebuild KDE sycoca cache
+    Exec=/bin/sh -c 'command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 --noincremental || true'
+    X-KDE-autostart-phase=0
+    NoDisplay=true
+    EOF
+
   # ── Mask unused services ────────────────────────────────────────────
   # Masking in /usr/lib is insufficient because freedesktop-sdk layers can
   # overwrite it during OCI layer merging.
@@ -459,5 +468,6 @@ public:
         - '%{sysconfdir}/pam.d/kde-smartcard'
         - '%{sysconfdir}/xdg/kscreenlockerrc'
         - '%{sysconfdir}/xdg/menus/applications.menu'
+        - '%{sysconfdir}/xdg/autostart/aurora-sycoca.desktop'
         - '%{sysconfdir}/xdg/plasma-workspace/env/kde-settings.sh'
         - '%{datadir}/kde-settings/kde-profile/default/xdg/kdeglobals'
