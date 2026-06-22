@@ -392,10 +392,19 @@ config:
     [Desktop Entry]
     Type=Application
     Name=Rebuild KDE sycoca cache
-    Exec=/bin/sh -c 'command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 --noincremental || true'
+    Exec=/bin/sh -c 'export XDG_DATA_DIRS=/usr/share:/usr/local/share; command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 --noincremental || true'
     X-KDE-autostart-phase=0
     NoDisplay=true
     EOF
+
+  # ── XDG_DATA_DIRS for all users ───────────────────────────────────
+  # Without this environment variable, kbuildsycoca6 cannot find .desktop
+  # files, producing an empty sycoca cache even though 140+ apps are
+  # installed in /usr/share/applications/.
+  - |
+    install -Dm644 /dev/stdin "%{install-root}/etc/environment.d/50-aurora-xdg.conf" <<'EOFX'
+    XDG_DATA_DIRS=/usr/share:/usr/local/share
+    EOFX
 
   # ── Mask unused services ────────────────────────────────────────────
   # Masking in /usr/lib is insufficient because freedesktop-sdk layers can
@@ -469,5 +478,6 @@ public:
         - '%{sysconfdir}/xdg/kscreenlockerrc'
         - '%{sysconfdir}/xdg/menus/applications.menu'
         - '%{sysconfdir}/xdg/autostart/aurora-sycoca.desktop'
+        - '%{sysconfdir}/environment.d/50-aurora-xdg.conf'
         - '%{sysconfdir}/xdg/plasma-workspace/env/kde-settings.sh'
         - '%{datadir}/kde-settings/kde-profile/default/xdg/kdeglobals'
