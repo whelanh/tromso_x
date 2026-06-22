@@ -57,6 +57,24 @@ config:
         cp -a /layer/usr/etc/. /layer/etc/
         rm -rf /layer/usr/etc
       fi
+    # /usr/etc → /etc copy (above) overwrites files previously installed to
+    # /etc/ by child-layer elements like system-config.bst.  Re-create the
+    # application menu here so it is the final version in the image.
+    - |
+      install -d /layer/etc/xdg/menus
+      install -Dm644 /dev/stdin /layer/etc/xdg/menus/applications.menu <<'MENUEOF'
+      <!DOCTYPE Menu PUBLIC "-//freedesktop//DTD Menu 1.0//EN"
+        "http://www.freedesktop.org/standards/menu-spec/menu-1.0.dtd">
+      <Menu>
+        <Name>Applications</Name>
+        <DefaultAppDirs/>
+        <DefaultDirectoryDirs/>
+        <DefaultMergeDirs/>
+        <Include>
+          <All/>
+        </Include>
+      </Menu>
+      MENUEOF
     - |
       # The shadow package seeds empty subordinate ID files; populate them
       # after /usr/etc has been materialized into /etc so rootless podman in
@@ -111,7 +129,8 @@ config:
       if timeout 30 mount -t overlay overlay \
            -o "lowerdir=/parent,upperdir=/layer,workdir=/sycoca-work" \
            /sycoca-merged 2>/dev/null; then
-        timeout 120 chroot /sycoca-merged /usr/libexec/kf6/kbuildsycoca6 --noincremental 2>/dev/null || true
+        KBS=$(chroot /sycoca-merged /bin/sh -c 'command -v kbuildsycoca6 2>/dev/null || echo /usr/libexec/kf6/kbuildsycoca6' 2>/dev/null)
+        timeout 300 chroot /sycoca-merged "$KBS" --noincremental || true
         umount /sycoca-merged || true
       fi
       rm -rf /sycoca-merged /sycoca-work 2>/dev/null || true
