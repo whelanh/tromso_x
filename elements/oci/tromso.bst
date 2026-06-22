@@ -132,10 +132,6 @@ config:
         mkdir -p /layer/etc/pki/ca-trust/extracted
         cp -a /etc/pki/ca-trust/extracted/. /layer/etc/pki/ca-trust/extracted/
       fi
-      if [ -d /etc/ssl/certs ]; then
-        mkdir -p /layer/etc/ssl/certs
-        cp -a /etc/ssl/certs/. /layer/etc/ssl/certs/
-      fi
     - |
       # Force an explicit font family in the Breeze QML that renders the
       # greeter / lock-screen text. Live guest testing showed this changes the
