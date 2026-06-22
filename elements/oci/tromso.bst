@@ -129,8 +129,10 @@ config:
       if timeout 30 mount -t overlay overlay \
            -o "lowerdir=/parent,upperdir=/layer,workdir=/sycoca-work" \
            /sycoca-merged 2>/dev/null; then
+        # Remove any stale sycoca caches so the rebuild is guaranteed fresh
+        find /sycoca-merged -maxdepth 4 -name 'ksycoca*' -path '*/.cache/*' -delete 2>/dev/null || true
         KBS=$(chroot /sycoca-merged /bin/sh -c 'command -v kbuildsycoca6 2>/dev/null || echo /usr/libexec/kf6/kbuildsycoca6' 2>/dev/null)
-        timeout 300 chroot /sycoca-merged "$KBS" --noincremental || true
+        timeout 300 chroot /sycoca-merged /usr/bin/env HOME=/root "$KBS" --noincremental || true
         umount /sycoca-merged || true
       fi
       rm -rf /sycoca-merged /sycoca-work 2>/dev/null || true
