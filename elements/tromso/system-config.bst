@@ -392,8 +392,8 @@ config:
     [Desktop Entry]
     Type=Application
     Name=Rebuild KDE sycoca cache
-    Exec=/bin/sh -c 'export XDG_DATA_DIRS=/usr/share:/usr/local/share; command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 --noincremental || true'
-    X-KDE-autostart-phase=0
+    Exec=/bin/sh -c 'export LANG=C.UTF-8 XDG_DATA_DIRS=/usr/share:/usr/local/share:/usr/share/kservices6; rm -f $HOME/.cache/ksycoca6*; kbuildsycoca6 --noincremental'
+    X-KDE-autostart-phase=2
     NoDisplay=true
     EOF
 
