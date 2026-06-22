@@ -59,7 +59,6 @@ git clone https://github.com/tuna-os/tromso.git
 cd tromso
 
 # Background build with live log tailing
-BST_FLAGS="--max-jobs $(nproc) --fetchers $(nproc)" just bst-build
 BST_FLAGS="--max-jobs $(nproc) --fetchers $(nproc)--no-interactive" just bst build oci/tromso.bst && just export
 
 # Push to your container registry after export
@@ -68,7 +67,7 @@ sudo podman tag tromso:latest ghcr.io/whelanh/tromso_x:latest
 sudo podman push ghcr.io/whelanh/tromso_x:latest
 
 # Or foreground build + OCI export
-just build
+BST_FLAGS="--max-jobs $(nproc) --no-interactive" just build
 ```
 
 ### Boot a VM for testing
