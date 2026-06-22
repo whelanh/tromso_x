@@ -93,56 +93,25 @@ sources:
 
 ## 3. Intentionally Pinned Elements
 
-These elements track a specific tag or branch rather than `master` because
-the latest `master` is known to be incompatible or unstable. **Do not
-blindly change their `track:` to `master`.**
+There are currently no intentionally pinned elements.  All KDE, Qt6, and
+core-deps elements track their upstream `master` branch (or `v6.*` for Qt6)
+and are automatically refreshed by `scripts/track-refs-local.sh`.
 
-### SDDM — `elements/kde/plasma/sddm.bst`
+(Previous pinned elements that have been unpinned: SDDM was replaced by
+plasma-login-manager; plasma-vault was unpinned from `Plasma/6.6` to
+`master` on 2026-06-22.)
 
-| Field | Value |
-|-------|-------|
-| `track` | `v0.21.0` |
-| `ref` | `v0.21.0-0-g4832736de...` |
-| Source | `kde:plasma/sddm.git` |
-| KDE Invent | https://invent.kde.org/plasma/sddm |
+### How to pin an element (if needed in the future)
 
-**Why pinned:** SDDM upstream is transitioning to a new architecture. The
-`master` branch may contain breaking changes that prevent login.
-
-**When to bump:** Check for new stable tags at
-https://invent.kde.org/plasma/sddm/-/tags. When a new `v0.22.0` (or
-similar) tag appears, update both `track:` and `ref:` and test that the
-display manager starts correctly in a VM (`just generate-bootable-image &&
-just boot-vm`).
-
-### plasma-vault — `elements/kde/plasma/plasma-vault.bst`
-
-| Field | Value |
-|-------|-------|
-| `track` | `Plasma/6.6` |
-| `ref` | `v6.3.5-0-g94adb85b2b...` |
-| Source | `kde:plasma/plasma-vault.git` |
-| KDE Invent | https://invent.kde.org/plasma/plasma-vault |
-
-**Why pinned:** Held back to the Plasma 6.6 maintenance branch. The
-`master` branch targets a newer Plasma version that may have API
-incompatibilities.
-
-**When to bump:** When the rest of the Plasma stack moves to 6.7+, update
-`track:` to `Plasma/6.7` (or `master` if it stabilizes). Check the branch
-list at https://invent.kde.org/plasma/plasma-vault/-/branches.
-
-### How to update a pinned element
+If an upstream `master` introduces a breaking change and you need to pin a
+package temporarily:
 
 ```bash
 cd /path/to/kde-build-meta-x
 
-# Edit the .bst file — change track: to the new tag/branch
+# Edit the .bst file — change track: to a specific tag or branch
 # Then run bst source track on just that element to update the ref:
-just bst source track kde/plasma/sddm.bst
-
-# Or manually set the ref — get the commit from KDE Invent:
-# https://invent.kde.org/plasma/sddm/-/commit/HASH
+just bst source track kde/plasma/<element>.bst
 ```
 
 ---
