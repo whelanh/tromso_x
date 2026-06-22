@@ -61,13 +61,13 @@ cd tromso
 # Background build with live log tailing
 BST_FLAGS="--max-jobs $(nproc) --fetchers $(nproc)--no-interactive" just bst build oci/tromso.bst && just export
 
+# Or foreground build + OCI export
+BST_FLAGS="--max-jobs $(nproc) --no-interactive" just build
+
 # Push to your container registry after export
 sudo podman login ghcr.io --username whelanh
 sudo podman tag tromso:latest ghcr.io/whelanh/tromso_x:latest
 sudo podman push ghcr.io/whelanh/tromso_x:latest
-
-# Or foreground build + OCI export
-BST_FLAGS="--max-jobs $(nproc) --no-interactive" just build
 ```
 
 ### Boot a VM for testing
