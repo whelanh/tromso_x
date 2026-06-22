@@ -94,11 +94,12 @@ config:
     # polkitd: PolicyKit daemon
     u polkitd - "User for polkitd" /etc/polkit-1 /usr/sbin/nologin
 
-    # sddm: display manager
-    u sddm - "Simple Desktop Display Manager" /var/lib/sddm /usr/sbin/nologin
-    m sddm video
-    m sddm render
-    m sddm input
+    # plasmalogin: Plasma Login Manager greeter account.  The user record is
+    # created by the package's /usr/lib/sysusers.d/plasmalogin.conf; here we
+    # only add the group memberships the greeter compositor needs for DRM/input.
+    m plasmalogin video
+    m plasmalogin render
+    m plasmalogin input
     EOF
 
   # ── sshd.service ─────────────────────────────────────────────────────
@@ -143,15 +144,15 @@ config:
     include /etc/ld.so.conf.d/*.conf
     EOF
 
-  # ── sddm.service ─────────────────────────────────────────────────────
-  # KDE Linux is Wayland-native; Xorg is not installed.  SDDM must use
-  # Wayland mode with kwin_wayland as the greeter compositor.
-  # QT_QUICK_BACKEND=software enables Mesa software rasterizer for the
+  # ── plasmalogin.service drop-in ──────────────────────────────────────
+  # KDE Linux is Wayland-native; Xorg is not installed.  plasma-login-manager
+  # runs its own Wayland compositor for the greeter, so no CompositorCommand
+  # config is required (unlike SDDM).
+  # QT_QUICK_BACKEND=software enables the Mesa software rasterizer for the
   # QML greeter UI in virtualised environments (virtio-vga / llvmpipe).
-  # ── sddm.service drop-in ─────────────────────────────────────────────
   - |
-    install -d "%{install-root}/usr/lib/systemd/system/sddm.service.d"
-    install -Dm644 /dev/stdin "%{install-root}/usr/lib/systemd/system/sddm.service.d/debug.conf" <<'EOF'
+    install -d "%{install-root}/usr/lib/systemd/system/plasmalogin.service.d"
+    install -Dm644 /dev/stdin "%{install-root}/usr/lib/systemd/system/plasmalogin.service.d/debug.conf" <<'EOF'
     [Service]
     Environment=QT_QUICK_BACKEND=software
     Environment=KWIN_COMPOSE=Q
@@ -159,53 +160,16 @@ config:
     StandardError=journal+console
     EOF
 
-  # ── SDDM Wayland configuration ────────────────────────────────────────
-  - |
-    install -d "%{install-root}/etc/sddm.conf.d"
-    install -Dm644 /dev/stdin "%{install-root}/etc/sddm.conf.d/wayland.conf" <<'EOF'
-    [General]
-    DisplayServer=wayland
-    GreeterEnvironment=QT_WAYLAND_SHELL_INTEGRATION=layer-shell,QT_QUICK_BACKEND=software
-
-    [Wayland]
-    CompositorCommand=kwin_wayland --no-lockscreen --no-global-shortcuts --locale1
-    EOF
-
-  # Enable SDDM as the default display manager
+  # Enable plasma-login-manager as the default display manager
   - |
     install -d "%{install-root}/usr/lib/systemd/system/graphical.target.wants"
-    ln -sf ../sddm.service "%{install-root}/usr/lib/systemd/system/display-manager.service"
-    ln -sf ../sddm.service "%{install-root}/usr/lib/systemd/system/graphical.target.wants/sddm.service"
+    ln -sf ../plasmalogin.service "%{install-root}/usr/lib/systemd/system/display-manager.service"
+    ln -sf ../plasmalogin.service "%{install-root}/usr/lib/systemd/system/graphical.target.wants/plasmalogin.service"
 
-  # ── SDDM PAM configs ───────────────────────────────────────────────
-  # Parent-layer PAM files (/etc/pam.d/sddm*) are lost during bootc
-  # deployment when the child layer also has /etc/pam.d/ entries.
-  # Duplicate them here so they survive in the child layer.
-  - |
-    install -Dm644 /dev/stdin "%{install-root}/etc/pam.d/sddm-greeter" <<'EOF'
-    auth     required pam_env.so
-    auth     required pam_permit.so
-    account  required pam_permit.so
-    session  required pam_unix.so
-    -session optional pam_systemd.so
-    EOF
-
-  - |
-    install -Dm644 /dev/stdin "%{install-root}/etc/pam.d/sddm" <<'EOF'
-    auth     include  system-auth
-    account  include  system-auth
-    password include  system-auth
-    session  include  system-auth
-    EOF
-
-  - |
-    install -Dm644 /dev/stdin "%{install-root}/etc/pam.d/sddm-autologin" <<'EOF'
-    auth     required pam_env.so
-    auth     required pam_permit.so
-    account  include  system-auth
-    password include  system-auth
-    session  include  system-auth
-    EOF
+  # ── plasma-login-manager PAM configs ─────────────────────────────────
+  # Unlike SDDM, plasma-login-manager installs its PAM files to
+  # /usr/lib/pam.d/ (immutable /usr), so they survive bootc deployment and
+  # no /etc/pam.d/ duplication workaround is needed here.
 
   # ── systemd default target ──────────────────────────────────────────
   - |
@@ -412,8 +376,6 @@ config:
     ln -sf /dev/null "%{install-root}/etc/systemd/system/systemd-homed.service"
     # debug-shell: ttyS1 early root shell — only needed during development
     ln -sf /dev/null "%{install-root}/etc/systemd/system/debug-shell.service"
-    # sddm-themes-workaround: recursive overlay might hide themes
-    ln -sf /dev/null "%{install-root}/etc/systemd/system/usr-share-sddm-themes.mount"
     # flatpak-preinstall: requires Flatpak infrastructure not present in base image
     ln -sf /dev/null "%{install-root}/etc/systemd/system/flatpak-preinstall.service"
 
@@ -466,18 +428,14 @@ public:
         - '%{sysconfdir}/systemd/system/debug-shell.service'
         - '%{sysconfdir}/systemd/system/flatpak-preinstall.service'
         - '%{sysconfdir}/ld.so.conf'
-        - '%{indep-libdir}/systemd/system/sddm.service.d/debug.conf'
-        - '%{sysconfdir}/sddm.conf.d/wayland.conf'
+        - '%{indep-libdir}/systemd/system/plasmalogin.service.d/debug.conf'
         - '%{indep-libdir}/systemd/system/display-manager.service'
-        - '%{indep-libdir}/systemd/system/graphical.target.wants/sddm.service'
+        - '%{indep-libdir}/systemd/system/graphical.target.wants/plasmalogin.service'
         - '%{indep-libdir}/systemd/system/default.target'
         - '%{bindir}/unix_chkpwd'
         - '%{sysconfdir}/pam.d/kde'
         - '%{sysconfdir}/pam.d/kde-fingerprint'
         - '%{sysconfdir}/pam.d/kde-smartcard'
-        - '%{sysconfdir}/pam.d/sddm'
-        - '%{sysconfdir}/pam.d/sddm-greeter'
-        - '%{sysconfdir}/pam.d/sddm-autologin'
         - '%{sysconfdir}/xdg/kscreenlockerrc'
         - '%{sysconfdir}/xdg/plasma-workspace/env/kde-settings.sh'
         - '%{datadir}/kde-settings/kde-profile/default/xdg/kdeglobals'

@@ -12,7 +12,7 @@ depends:
   # dconf: needed by dconf-update.service and KDE/GNOME settings infrastructure
   - kde-build-meta.bst:core-deps/dconf.bst
 
-  # accountsservice: required by SDDM to list users and manage user sessions
+  # accountsservice: required by the login manager to list users and manage sessions
   - kde-build-meta.bst:core-deps/accountsservice.bst
 
   # System configuration: dbus units, system users, sshd, networkd DHCP
@@ -23,7 +23,7 @@ depends:
   - tromso/containers-config.bst
 
   # Qt6 libraries install to /usr/lib, so add a runtime ld.so.conf.d drop-in
-  # to make them visible to SDDM and other dynamically linked Qt binaries.
+  # to make them visible to the login manager and other Qt binaries.
   - tromso/ldconfig-paths.bst
 
   # Upstream layer parity:
@@ -41,7 +41,7 @@ depends:
   - tromso/multimedia-overrides.bst
   - tromso/fcitx5-cluster.bst
 
-  # Fonts for SDDM and desktop text rendering. These were previously added in
+  # Fonts for the login manager and desktop text rendering. These were previously added in
   # 89d117f0a to fix tofu boxes in the graphical stack.
   - kde-build-meta.bst:kde-linux-deps/noto-fonts.bst
   - kde-build-meta.bst:kde-linux-deps/noto-cjk.bst

@@ -63,8 +63,8 @@ config:
       # the greeter session gets a real range.
       for dir in /layer/etc /layer/usr/share/factory/etc; do
         mkdir -p "$dir"
-        printf '%s\n' 'sddm:100000:65536' >"$dir/subuid"
-        printf '%s\n' 'sddm:100000:65536' >"$dir/subgid"
+        printf '%s\n' 'plasmalogin:100000:65536' >"$dir/subuid"
+        printf '%s\n' 'plasmalogin:100000:65536' >"$dir/subgid"
         chmod 0644 "$dir/subuid" "$dir/subgid"
       done
       # Compose/export loses the capability applied earlier in the stack, so
@@ -72,7 +72,8 @@ config:
       setcap cap_sys_nice+ep /layer/usr/bin/kwin_wayland
       setcap cap_setuid+ep /layer/usr/bin/newuidmap
       setcap cap_setgid+ep /layer/usr/bin/newgidmap
-      # Refresh linker cache in the composed rootfs so SDDM can resolve Qt6
+      # Refresh linker cache in the composed rootfs so the login manager can
+      # resolve Qt6
       # libraries installed under /usr/lib at first boot.
       # Qt6 core libs live in /parent/usr/lib (KDE Linux base image); chrooting
       # only into /layer misses them.  Mount parent+layer as an overlay so
@@ -103,17 +104,11 @@ config:
       fi
       rm -rf /fc-merged /fc-work 2>/dev/null || true
     - |
-      # Force an explicit font family in the SDDM/Breeze QML that renders the
-      # greeter text. Live guest testing showed this changes the framebuffer,
-      # while rebuilding font cache alone did not.
-      for login_qml in \
-        /layer/usr/share/sddm/themes/01-breeze-aurora/Login.qml \
-        /layer/usr/share/sddm/themes/breeze/Login.qml; do
-        if [ -f "$login_qml" ]; then
-          sed -i 's|^\([[:space:]]*font\.pointSize: fontSize + 1\)$|\1\
-              font.family: "Noto Sans"|' "$login_qml"
-        fi
-      done
+      # Force an explicit font family in the Breeze QML that renders the
+      # greeter / lock-screen text. Live guest testing showed this changes the
+      # framebuffer, while rebuilding font cache alone did not.  These
+      # org.kde.breeze look-and-feel components are shared by the
+      # plasma-login-manager greeter and the screen locker.
       action_button_qml=/layer/usr/lib/qml/org/kde/breeze/components/ActionButton.qml
       if [ -f "$action_button_qml" ]; then
         sed -i 's|^\([[:space:]]*font\.pointSize: Kirigami\.Theme\.defaultFont\.pointSize + 1\)$|\1\

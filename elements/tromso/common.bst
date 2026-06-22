@@ -41,13 +41,4 @@ config:
     if [ -d aurora-branding/system_files/usr ]; then
       cp -r aurora-branding/system_files/usr/./ "%{install-root}%{prefix}/"
     fi
-    main_qml="%{install-root}%{datadir}/sddm/themes/01-breeze-aurora/Main.qml"
-    if [ -f "$main_qml" ]; then
-      sed -i '/^[[:space:]]*VirtualKeyboardLoader[[:space:]]*{/,/^[[:space:]]*}[[:space:]]*$/c\
-        QtObject {\
-            id: inputPanel\
-            property bool keyboardActive: false\
-            function showHide() {}\
-        }' "$main_qml"
-    fi
   - "%{install-extra}"

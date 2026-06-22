@@ -1,5 +1,5 @@
 kind: manual
-description: Aurora logos, pixmaps, splash assets, and SDDM logo links
+description: Aurora logos, pixmaps, and splash assets
 
 sources:
 - kind: git_repo
@@ -31,9 +31,8 @@ config:
     splash_dir="%{install-root}%{datadir}/plasma/look-and-feel/dev.getaurora.aurora.desktop/contents/splash/images"
     splash_light_dir="%{install-root}%{datadir}/plasma/look-and-feel/dev.getaurora.auroralight.desktop/contents/splash/images"
     plymouth_dir="%{install-root}%{datadir}/plymouth/themes/spinner"
-    sddm_dir="%{install-root}%{datadir}/sddm/themes/01-breeze-aurora"
 
-    mkdir -p "$scalable_dir" "$places_dir" "$apps_dir" "$pixmaps_dir" "$splash_dir" "$splash_light_dir" "$plymouth_dir" "$sddm_dir"
+    mkdir -p "$scalable_dir" "$places_dir" "$apps_dir" "$pixmaps_dir" "$splash_dir" "$splash_light_dir" "$plymouth_dir"
 
     install -Dm0644 logos/distributor-logo.svg "$scalable_dir/distributor-logo.svg"
     install -Dm0644 logos/auroralogo-white.svg "$places_dir/auroralogo-white.svg"
@@ -52,7 +51,6 @@ config:
     ln -sr "$places_dir/distributor-logo-symbolic.svg" "$places_dir/distributor-logo-white.svg"
     ln -sr "$places_dir/distributor-logo-symbolic.svg" "$places_dir/start-here.svg"
     ln -sr "$places_dir/distributor-logo-symbolic.svg" "$apps_dir/start-here.svg"
-    ln -sr "$places_dir/distributor-logo.svg" "$sddm_dir/default-logo.svg"
 
     rsvg-convert -w 400 -h 100 -o "$pixmaps_dir/fedora-logo.png" logos/aurora-banner.svg
     rsvg-convert -w 128 -h 32 -o "$pixmaps_dir/fedora-logo-small.png" logos/aurora-banner.svg
