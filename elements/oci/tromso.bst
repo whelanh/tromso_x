@@ -53,35 +53,14 @@ config:
       # Enable flatpak-system-helper so Discover can interact with Flatpak
       systemctl --root=/layer enable flatpak-system-helper.service || true
 
-    - |
-      if [ -d /layer/usr/etc ]; then
-        mkdir -p /layer/etc
-        cp -a /layer/usr/etc/. /layer/etc/
-        rm -rf /layer/usr/etc
-      fi
-    # /usr/etc → /etc copy (above) overwrites files previously installed to
-    # /etc/ by child-layer elements like system-config.bst.  Re-create the
-    # application menu here so it is the final version in the image.
-    - |
-      install -d /layer/etc/xdg/menus
-      install -Dm644 /dev/stdin /layer/etc/xdg/menus/applications.menu <<'MENUEOF'
-      <!DOCTYPE Menu PUBLIC "-//freedesktop//DTD Menu 1.0//EN"
-        "http://www.freedesktop.org/standards/menu-spec/menu-1.0.dtd">
-      <Menu>
-        <Name>Applications</Name>
-        <DefaultAppDirs/>
-        <DefaultDirectoryDirs/>
-        <DefaultMergeDirs/>
-        <Include>
-          <All/>
-        </Include>
-      </Menu>
-      MENUEOF
+    # We no longer move /usr/etc to /etc or recreate applications.menu here.
+    # Tromso layers on top of a parent image containing /usr/etc, so bootc
+    # ignores /etc. All configs will be moved to /layer/usr/etc at the end.
     - |
       # The shadow package seeds empty subordinate ID files; populate them
       # after /usr/etc has been materialized into /etc so rootless podman in
       # the greeter session gets a real range.
-      for dir in /layer/etc /layer/usr/share/factory/etc; do
+      for dir in /layer/usr/etc /layer/usr/share/factory/etc; do
         mkdir -p "$dir"
         printf '%s\n' 'plasmalogin:100000:65536' >"$dir/subuid"
         printf '%s\n' 'plasmalogin:100000:65536' >"$dir/subgid"
@@ -99,8 +78,8 @@ config:
       # only into /layer misses them.  Mount parent+layer as an overlay so
       # ldconfig sees the full merged /usr/lib and writes the correct cache into
       # /layer/etc/ld.so.cache (overlay upper-dir write-back).
-      if [ ! -f /layer/etc/ld.so.conf ]; then
-        printf 'include /etc/ld.so.conf.d/*.conf\n' > /layer/etc/ld.so.conf
+      if [ ! -f /layer/usr/etc/ld.so.conf ]; then
+        printf 'include /etc/ld.so.conf.d/*.conf\n' > /layer/usr/etc/ld.so.conf
       fi
       mkdir -p /ld-work /ld-merged
       if timeout 30 mount -t overlay overlay \
@@ -126,11 +105,11 @@ config:
     # Extract CA certificates in the target layer instead of the build sandbox.
     # Since chroot is not permitted in this sandbox, and prepare-image.sh
     # already ran update-ca-trust inside the sandbox root, we can just copy
-    # the generated certificates from the sandbox's /etc to the layer's /etc.
+    # the generated certificates from the sandbox's /etc to the layer's /usr/etc.
     - |
       if [ -d /etc/pki/ca-trust/extracted ]; then
-        mkdir -p /layer/etc/pki/ca-trust/extracted
-        cp -a /etc/pki/ca-trust/extracted/. /layer/etc/pki/ca-trust/extracted/
+        mkdir -p /layer/usr/etc/pki/ca-trust/extracted
+        cp -a /etc/pki/ca-trust/extracted/. /layer/usr/etc/pki/ca-trust/extracted/
       fi
     - |
       # Force an explicit font family in the Breeze QML that renders the
@@ -164,6 +143,13 @@ config:
       if [ -f "$battery_qml" ]; then
         sed -i 's|^\([[:space:]]*font\.pointSize: root\.fontSize\)$|\1\
               font.family: "Noto Sans"|' "$battery_qml"
+      fi
+
+    - |
+      if [ -d /layer/etc ]; then
+        mkdir -p /layer/usr/etc
+        cp -a /layer/etc/. /layer/usr/etc/
+        rm -rf /layer/etc
       fi
 
     - |
