@@ -71,10 +71,6 @@ as the display manager with a service drop-in for software rendering in VMs.
 5. Delete old caches, rebuild with `LANG=C.UTF-8 XDG_DATA_DIRS`, restart plasmashell
 6. Rebuild cache, terminate session, log back in fresh
 7. Set `LANG=C.UTF-8` + cache cleanup in autostart Exec, move to phase 2
-8. Download Mozilla CA bundle directly in OCI compose (curl -k to curl.se/ca/cacert.pem)
-9. Add `ca-certificates` element to deps.bst + `update-ca-certificates` overlay step
-   (fd-sdk certificate paths are Fedora-style `/etc/pki/`, which the compose drops)
-10. Rebuild on fresh image from scratch — no improvement on any issue
 
 **Working theories for root cause:**
 1. The sycoca cache built by `kbuildsycoca6` is in a format that plasmashell / kded6
@@ -97,27 +93,6 @@ as the display manager with a service drop-in for software rendering in VMs.
   about sycoca database loading.
 - Attempt building sycoca cache on a different system with the same KF6 versions
   and transplanting the cache file.
-
-#### 4. bootc Deployment Loses `/etc` Files (PARTIALLY RESOLVED)
-Previously affected `/etc/pam.d/sddm*`, `/etc/xdg/menus/applications.menu`,
-and `/etc/sddm.conf.d/wayland.conf`. SDDM configs eliminated by PLM migration.
-Applications menu now installed in child layer `/etc/xdg/menus/`.
-Remaining: `/etc/fonts/fonts.conf` — fontconfig config (still needs audit).
-
-#### 5. Missing CA Certificates / Locale (UNRESOLVED — partially related to #3)
-
-**CA Certificates:**
-- No root CA certificates on the system (`/etc/ssl/certs/` empty, no certs anywhere).
-- OpenSSL default path is `/etc/pki/tls` (Fedora-style).  The freedesktop-sdk
-  `ca-certificates.bst` element installs certs under `/etc/pki/ca-trust/...` but
-  the compose step drops `/etc` content — the certs never reach the final image.
-- Fixes attempted and deployed (neither worked on fresh build):
-  a) Added `ca-certificates` to `tromso/deps.bst` + overlay `update-ca-certificates` step
-  b) Direct download of Mozilla CA bundle via `curl` in `oci/tromso.bst`
-- **Workaround (manual)**: `curl -k -o /etc/ssl/certs/ca-certificates.crt https://curl.se/ca/cacert.pem`
-  This works when run manually on the VM — Discover SSL errors resolved, Flathub
-  remote add succeeds.  But the build-time `curl` in oci/tromso.bst runs inside
-  a container sandbox that may lack network access or `curl`.
 
 **Locale:**
 - Qt reports: "Detected locale 'C' with character encoding 'ANSI_X3.4-1968'".
