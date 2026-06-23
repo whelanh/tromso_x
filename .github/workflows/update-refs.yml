@@ -180,7 +180,7 @@ jobs:
             Automated ref update via `bst source track`.
 
             **What changed:**
-            - KDE frameworks/plasma/apps: tracked to latest `master`
+            - KDE frameworks/plasma: tracked to latest `v6.*` stable tags; apps to `master`
             - core-deps: tracked to latest release tags
             - freedesktop-sdk: tracked to latest `25.08.*` point release
             - tromso-local elements: tracked to latest refs
