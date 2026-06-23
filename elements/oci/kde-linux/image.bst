@@ -45,12 +45,15 @@ config:
   - |
     glib-compile-schemas /layer/usr/share/glib-2.0/schemas
 
-  # bootc images must not have both /etc and /usr/etc.
+  # bootc images must use /usr/etc/ exclusively.  On bootc-deployed
+  # systems /etc/ at runtime is a tmpfs that hides the image's /etc/
+  # content.  prepare-image.sh and systemd-sysusers write to /etc/, so
+  # we move everything into /usr/etc/ before exporting the OCI image.
   - |
-    if [ -d /layer/usr/etc ]; then
-      mkdir -p /layer/etc
-      cp -a /layer/usr/etc/. /layer/etc/
-      rm -rf /layer/usr/etc
+    if [ -d /layer/etc ]; then
+      mkdir -p /layer/usr/etc
+      cp -a /layer/etc/. /layer/usr/etc/
+      rm -rf /layer/etc
     fi
 
   - |

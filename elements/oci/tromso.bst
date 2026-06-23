@@ -53,16 +53,17 @@ config:
       # Enable flatpak-system-helper so Discover can interact with Flatpak
       systemctl --root=/layer enable flatpak-system-helper.service || true
 
-    # The parent OCI image (kde-linux) uses the /etc/ convention because
-    # prepare-image.sh writes to /etc/.  We must match that convention:
-    # both parent and layer must have ONLY /etc/ (not /usr/etc/) so that
-    # build-oci produces a merged image with exactly one of them.
-    # All configs stay in /layer/etc; any stray /usr/etc is merged back
-    # at the end.
+    # The parent OCI image (kde-linux) uses the /usr/etc/ convention
+    # (OSTree standard).  On bootc-deployed systems /etc/ is a tmpfs that
+    # hides the image's /etc/ content at runtime — all system default configs
+    # must live in /usr/etc/ so systemd-tmpfiles can mirror them into the
+    # runtime /etc/.  We must match this convention: both parent and layer
+    # must have ONLY /usr/etc/ so build-oci produces a clean merged image.
+    # All configs are moved to /layer/usr/etc at the end of this script.
     - |
       # The shadow package seeds empty subordinate ID files; populate them
       # so rootless podman in the greeter session gets a real range.
-      for dir in /layer/etc /layer/usr/share/factory/etc; do
+      for dir in /layer/usr/etc /layer/usr/share/factory/etc; do
         mkdir -p "$dir"
         printf '%s\n' 'plasmalogin:100000:65536' >"$dir/subuid"
         printf '%s\n' 'plasmalogin:100000:65536' >"$dir/subgid"
@@ -84,8 +85,8 @@ config:
       # only into /layer misses them.  Mount parent+layer as an overlay so
       # ldconfig sees the full merged /usr/lib and writes the correct cache into
       # /layer/etc/ld.so.cache (overlay upper-dir write-back).
-      if [ ! -f /layer/etc/ld.so.conf ]; then
-        printf 'include /etc/ld.so.conf.d/*.conf\n' > /layer/etc/ld.so.conf
+      if [ ! -f /layer/usr/etc/ld.so.conf ]; then
+        printf 'include /etc/ld.so.conf.d/*.conf\n' > /layer/usr/etc/ld.so.conf
       fi
       mkdir -p /ld-work /ld-merged
       if timeout 30 mount -t overlay overlay \
@@ -111,11 +112,11 @@ config:
     # Extract CA certificates in the target layer instead of the build sandbox.
     # Since chroot is not permitted in this sandbox, and prepare-image.sh
     # already ran update-ca-trust inside the sandbox root, we can just copy
-    # the generated certificates from the sandbox's /etc to the layer's /etc.
+    # the generated certificates from the sandbox's /etc to the layer's /usr/etc.
     - |
       if [ -d /etc/pki/ca-trust/extracted ]; then
-        mkdir -p /layer/etc/pki/ca-trust/extracted
-        cp -a /etc/pki/ca-trust/extracted/. /layer/etc/pki/ca-trust/extracted/
+        mkdir -p /layer/usr/etc/pki/ca-trust/extracted
+        cp -a /etc/pki/ca-trust/extracted/. /layer/usr/etc/pki/ca-trust/extracted/
       fi
     - |
       # Force an explicit font family in the Breeze QML that renders the
@@ -153,13 +154,14 @@ config:
 
     - |
       # bootc strictly requires exactly one of /etc or /usr/etc in the OCI
-      # image.  The parent image (kde-linux) uses /etc/ exclusively, so we
-      # must do the same.  Merge any stray /usr/etc content back into /etc/
-      # and remove /usr/etc/ before build-oci assembles the merged image.
-      if [ -d /layer/usr/etc ]; then
-        mkdir -p /layer/etc
-        cp -a /layer/usr/etc/. /layer/etc/
-        rm -rf /layer/usr/etc
+      # image.  On a bootc-deployed system /etc/ at runtime is a tmpfs, so
+      # system default configs must live in /usr/etc/.  Move all /layer/etc/
+      # content (created by prepare-image.sh and systemd-sysusers) into
+      # /usr/etc/ and remove the empty /etc/ directory.
+      if [ -d /layer/etc ]; then
+        mkdir -p /layer/usr/etc
+        cp -a /layer/etc/. /layer/usr/etc/
+        rm -rf /layer/etc
       fi
 
     - |
