@@ -34,7 +34,7 @@ jobs:
 
     steps:
       # ── Setup ─────────────────────────────────────────────────────────
-      - name: Checkout tromso_x
+      - name: Checkout tromso-x
         uses: actions/checkout@v4
 
       - name: Install Just
@@ -124,7 +124,7 @@ jobs:
           echo "KBM_SHA=${SHA}"             >> "$GITHUB_ENV"
           echo "KBM_SHORT=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_ENV"
 
-      # ── Phase 2: Update junction in tromso_x ──────────────────────────
+      # ── Phase 2: Update junction in tromso-x ──────────────────────────
       - name: Update kde-build-meta junction
         if: env.KBM_CHANGED == 'true'
         run: |
@@ -169,7 +169,7 @@ jobs:
             BST_FLAGS="--no-interactive" just bst source track $ELEMENTS 2>&1 || true
           fi
 
-      # ── Phase 4: Create PR on tromso_x ────────────────────────────────
+      # ── Phase 4: Create PR on tromso-x ────────────────────────────────
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
