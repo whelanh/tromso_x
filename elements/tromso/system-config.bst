@@ -418,8 +418,15 @@ config:
   # overwrite it during OCI layer merging.
   - |
     install -d "%{install-root}/etc/systemd/system"
-    # systemd-homed: Aurora does not use LUKS home dirs; fails on early D-Bus race
+    # systemd-homed: Aurora does not use LUKS home dirs; fails on early D-Bus race.
+    # Mask the service AND its D-Bus activation so accountsservice does not
+    # trip over a broken home1 activation during user enumeration.
     ln -sf /dev/null "%{install-root}/etc/systemd/system/systemd-homed.service"
+    ln -sf /dev/null "%{install-root}/etc/systemd/system/dbus-org.freedesktop.home1.service"
+    # systemd-homed helper services — still enabled via homed.service.wants;
+    # without masking they attempt to start and fail, polluting the journal.
+    ln -sf /dev/null "%{install-root}/etc/systemd/system/systemd-homed-activate.service"
+    ln -sf /dev/null "%{install-root}/etc/systemd/system/systemd-homed-firstboot.service"
     # debug-shell: ttyS1 early root shell — only needed during development
     ln -sf /dev/null "%{install-root}/etc/systemd/system/debug-shell.service"
     # flatpak-preinstall: requires Flatpak infrastructure not present in base image
@@ -447,6 +454,32 @@ config:
     install -d "%{install-root}/etc/dconf/db/distro.d"
     install -d "%{install-root}/etc/dconf/db/site.d"
 
+  # ── Accountsservice user cache primer ─────────────────────────────────
+  # accountsservice does not auto-cache users from /etc/passwd on first
+  # boot; ListCachedUsers returns empty until someone explicitly calls
+  # CacheUser.  The greeter uses ListCachedUsers to populate its user
+  # list, so without cached users nobody can log in via the GUI.
+  # This oneshot service caches every non-system user before the display
+  # manager starts.
+  - |
+    install -Dm644 /dev/stdin "%{install-root}/usr/lib/systemd/system/aurora-cache-users.service" <<'EOF'
+    [Unit]
+    Description=Cache non-system users for accountsservice
+    DefaultDependencies=no
+    After=accounts-daemon.service
+    Before=display-manager.service
+
+    [Service]
+    Type=oneshot
+    RemainAfterExit=yes
+    ExecStart=/bin/sh -c 'for u in $$(awk -F: "$$3>=1000&&$$3<65534{print $$1}" /etc/passwd); do busctl --system call org.freedesktop.Accounts /org/freedesktop/Accounts org.freedesktop.Accounts CacheUser s "$$u" 2>/dev/null; done'
+
+    [Install]
+    WantedBy=graphical.target
+    EOF
+    install -d "%{install-root}/usr/lib/systemd/system/graphical.target.wants"
+    ln -sf ../aurora-cache-users.service "%{install-root}/usr/lib/systemd/system/graphical.target.wants/aurora-cache-users.service"
+
 public:
   bst:
     split-rules:
@@ -471,6 +504,9 @@ public:
         - '%{indep-libdir}/pam.d/login'
         - '%{datadir}/pam/security/namespace.conf'
         - '%{sysconfdir}/systemd/system/systemd-homed.service'
+        - '%{sysconfdir}/systemd/system/dbus-org.freedesktop.home1.service'
+        - '%{sysconfdir}/systemd/system/systemd-homed-activate.service'
+        - '%{sysconfdir}/systemd/system/systemd-homed-firstboot.service'
         - '%{sysconfdir}/systemd/system/debug-shell.service'
         - '%{sysconfdir}/systemd/system/flatpak-preinstall.service'
         - '%{sysconfdir}/ld.so.conf'
@@ -479,6 +515,8 @@ public:
         - '%{indep-libdir}/systemd/system/graphical.target.wants/plasmalogin.service'
         - '%{indep-libdir}/systemd/system/default.target'
         - '%{bindir}/unix_chkpwd'
+        - '%{indep-libdir}/systemd/system/aurora-cache-users.service'
+        - '%{indep-libdir}/systemd/system/graphical.target.wants/aurora-cache-users.service'
         - '%{sysconfdir}/pam.d/kde'
         - '%{sysconfdir}/pam.d/kde-fingerprint'
         - '%{sysconfdir}/pam.d/kde-smartcard'
