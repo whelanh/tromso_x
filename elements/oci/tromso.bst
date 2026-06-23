@@ -53,13 +53,11 @@ config:
       # Enable flatpak-system-helper so Discover can interact with Flatpak
       systemctl --root=/layer enable flatpak-system-helper.service || true
 
-    # The parent OCI image (kde-linux) uses the /usr/etc/ convention
-    # (OSTree standard).  On bootc-deployed systems /etc/ is a tmpfs that
-    # hides the image's /etc/ content at runtime — all system default configs
-    # must live in /usr/etc/ so systemd-tmpfiles can mirror them into the
-    # runtime /etc/.  We must match this convention: both parent and layer
-    # must have ONLY /usr/etc/ so build-oci produces a clean merged image.
-    # All configs are moved to /layer/usr/etc at the end of this script.
+    # The OCI image chain uses /usr/etc/ (the OSTree standard).  On
+    # bootc-deployed systems /etc/ at runtime is a tmpfs; all system
+    # default configs must live in /usr/etc/.  Before build-oci we check
+    # the parent and normalize the layer to match — this avoids the
+    # "Tree contains both /etc and /usr/etc" deployment error.
     - |
       # The shadow package seeds empty subordinate ID files; populate them
       # so rootless podman in the greeter session gets a real range.
@@ -153,15 +151,28 @@ config:
       fi
 
     - |
-      # bootc strictly requires exactly one of /etc or /usr/etc in the OCI
-      # image.  On a bootc-deployed system /etc/ at runtime is a tmpfs, so
-      # system default configs must live in /usr/etc/.  Move all /layer/etc/
-      # content (created by prepare-image.sh and systemd-sysusers) into
-      # /usr/etc/ and remove the empty /etc/ directory.
-      if [ -d /layer/etc ]; then
-        mkdir -p /layer/usr/etc
-        cp -a /layer/etc/. /layer/usr/etc/
-        rm -rf /layer/etc
+      # Normalize /layer to match the parent image's /etc vs /usr/etc
+      # convention.  bootc requires exactly one of them in the merged OCI
+      # image.  When the parent has neither, default to the OSTree standard:
+      # /usr/etc/.
+      if [ -d /parent/etc ] && [ -d /parent/usr/etc ]; then
+        echo "ERROR: Parent image has both /etc and /usr/etc" >&2
+        exit 1
+      fi
+      if [ -d /parent/usr/etc ] || ( [ ! -d /parent/etc ] && [ ! -d /parent/usr/etc ] ); then
+        # Parent uses /usr/etc (or has neither) — use /usr/etc convention
+        if [ -d /layer/etc ]; then
+          mkdir -p /layer/usr/etc
+          cp -a /layer/etc/. /layer/usr/etc/
+          rm -rf /layer/etc
+        fi
+      elif [ -d /parent/etc ]; then
+        # Parent uses /etc — match it
+        if [ -d /layer/usr/etc ]; then
+          mkdir -p /layer/etc
+          cp -a /layer/usr/etc/. /layer/etc/
+          rm -rf /layer/usr/etc
+        fi
       fi
 
     - |
