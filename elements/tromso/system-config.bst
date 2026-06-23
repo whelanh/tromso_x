@@ -405,9 +405,12 @@ config:
   # Without this environment variable, kbuildsycoca6 cannot find .desktop
   # files, producing an empty sycoca cache even though 140+ apps are
   # installed in /usr/share/applications/.
+  # LANG=en_US.UTF-8 ensures locale-aware XML parsing of .desktop files
+  # does not fail on UTF-8 content (Qt6 interprets 'C' as ASCII).
   - |
     install -Dm644 /dev/stdin "%{install-root}/etc/environment.d/50-aurora-xdg.conf" <<'EOFX'
     XDG_DATA_DIRS=/usr/share:/usr/local/share
+    LANG=en_US.UTF-8
     EOFX
 
   # ── Mask unused services ────────────────────────────────────────────
