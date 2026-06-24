@@ -10,9 +10,13 @@ Last updated: 2026-06-24
   - `just generate-bootable-image` / `just generate-bootable-kde` — VM disk image
 - **KDE Plasma 6.7.80 desktop** loads with fonts and wallpaper
 - **plasma-login-manager** login screen works — SDDM fully replaced
-- **Network, System Settings, Konsole** functional
+- **Application launcher (kickoff/kicker)** shows all installed apps (FIXED 2026-06-24)
+- **KRunner** finds installed apps and newly-installed Flatpaks (FIXED 2026-06-24)
 - **Discover connects to Flathub** and shows remote apps
 - **Discover "Installed" tab** shows system apps (FIXED 2026-06-24)
+- **Panel icons** display correctly — no blank/white icons (FIXED 2026-06-24)
+- **Non-root users can install Flatpak apps** via Discover or CLI (FIXED 2026-06-24)
+- **Network, System Settings, Konsole** functional
 - **CA certificates** work for TLS connections
 - **Local `just` recipes** for both Aurora and minimal KDE images
 - **OCI image** builds and boots correctly via bootc
@@ -40,12 +44,20 @@ CA certs were installed to `/etc/pki/` which bootc's tmpfs overlay hides at runt
 Fixed by installing certs to `/usr/etc/pki/` and ensuring the `/usr/etc/` convention
 is used consistently.
 
-#### 5. Sycoca / XDG Menu Not Found (FIXED 2026-06-24)
-`kde-settings.sh` was overriding `XDG_CONFIG_DIRS` without including `/etc/xdg`.
-This prevented the XDG menu system from finding `applications.menu`, causing
-both the launcher and Discover's "Installed" tab to show nothing. Fixed by
-always including `/etc/xdg` in the XDG_CONFIG_DIRS path. Also added
-`KDEDIRS=/usr` and `KDE_FULL_SESSION=true` to match working KDE hosts.
+#### 5. Launcher, KRunner, Discover Empty — Missing `/etc/xdg` in XDG_CONFIG_DIRS (FIXED 2026-06-24)
+**Root cause**: `kde-settings.sh` was overriding `XDG_CONFIG_DIRS` without including
+`/etc/xdg`. This prevented the XDG menu system from finding `applications.menu`,
+causing the launcher, KRunner, and Discover's "Installed" tab to show nothing.
+`KDEDIRS=/usr` and `KDE_FULL_SESSION=true` were also missing — these are present
+on every working KDE host and tell KDE it's in a full desktop session.
+
+**Why it was hard to find**: The sycoca cache was correct and `kbuildsycoca6 --menutest`
+showed all apps because it reads the menu file directly from the filesystem. But
+plasmashell/kickoff/krunner use the XDG config search path to find the menu file,
+and `/etc/xdg` wasn't in that path. The host comparison revealed the discrepancy.
+
+**Also fixed**: `KDEDIRS=/usr` and `KDE_FULL_SESSION=true` added to match
+working KDE hosts.
 
 #### 6. Flatpak User Install (FIXED 2026-06-24)
 Two issues prevented non-root users from installing Flatpaks:
@@ -65,53 +77,14 @@ new runtime dependencies. The plasmoids are compiled as `.so` plugins at
 
 ### Known Issues
 
-#### 1. Application Launcher Empty (PARTIALLY FIXED — Discover works, kickoff/kicker does not)
-**Fixed**: Discover's "Installed" tab now shows system applications (the XDG menu fix).
-
-**Still broken**: The kickoff/kicker application launcher in the Plasma panel shows no
-applications. KRunner similarly cannot find installed desktop apps.
-
-**Evidence gathered (2026-06-24):**
-- Sycoca cache is correct: `kbuildsycoca6 --menutest` shows 24 apps even from
-  plasmashell's exact environment
-- kickoff/kicker `.so` plugins are installed and loaded by plasmashell
-- kded6 is running with 19 modules, properly maintains the sycoca cache
-- `KApplicationTrader::query` (the method kickoff/kicker/krunner use) returns
-  empty results even though the sycoca cache has valid entries
-- Both plasmashell and kbuildsycoca6 link the SAME `libKF6Service.so.6`
-- The hash mismatch bug in kservice (`7e01820`, March 2026) is fixed in our build
-
-**Ruled out**:
-- Aurora overlay is NOT the cause (kde-minimal build has same issue)
-- Missing plasmoid files (they're compiled `.so` plugins, not QML files)
-- Locale / LANG issues (set to `en_US.UTF-8`)
-- Compose filtering (all plugins present)
-- Sycoca cache corruption (verified correct)
-- KService version mismatch (same library linked everywhere)
-
-**Comparison with working host** (Plasma 6.7.80):
-- Host sycoca cache: 628-691KB vs VM: 226-396KB
-- Host XDG_CONFIG_DIRS includes `/etc/xdg` (now fixed on VM)
-- Host has `KDE_FULL_SESSION=true` and `KDEDIRS=/usr` (now set on VM)
-- Host has 29 kded6 modules vs VM 19 (additional KDE packages)
-- Host kservices6: 0 files (same as VM — no system-level service types)
-- Host desktop files: 208 vs VM: 136
-
-**Recommended next step**: After rebuild with the `XDG_CONFIG_DIRS`, `KDEDIRS`,
-and `KDE_FULL_SESSION` fixes, test the launcher again. If still broken, the
-next investigation should focus on what `KApplicationTrader::query` does
-internally vs what `--menutest` does differently. The sycoca cache is correct
-but the launcher model doesn't consume it.
-
-#### 2. Unprivileged User Namespaces (UNRESOLVED)
+#### 1. Unprivileged User Namespaces (UNRESOLVED)
 Flatpak `run` shows "CanCreateUserNamespace() clone() failure: EPERM". This
 means unprivileged user namespaces are restricted on this kernel. Flatpak apps
-can be installed (with the polkit + fusermount fixes) but may fail at runtime.
-May need `kernel.unprivileged_userns_clone=1`.
+can be installed but may fail at runtime. May need `kernel.unprivileged_userns_clone=1`.
 
-#### 3. Tracker Dependencies (kcm_plasmalogin) (UNRESOLVED, LOW PRIORITY)
-`Could not unmount revokefs-fuse` errors during flatpak install (cosmetic,
-flatpaks install successfully despite the warning).
+#### 2. Fusermount3 Warnings (COSMETIC)
+`Could not unmount revokefs-fuse` warnings appear during flatpak install but
+do not prevent successful installation. The warning is cosmetic.
 
 ## Tracking Strategy
 
@@ -120,7 +93,7 @@ to stable releases was attempted but abandoned because:
 - BST tracking across junctions requires `project.refs` (not configured)
 - The pattern `v6.*.?` excludes pre-release tags (`.90`, `-rc`) but tracking
   from within kde-build-meta-x failed due to container image issues
-- Pinng plasma-desktop/plasma-workspace to `v6.7.1` caused API skew with
+- Pinning plasma-desktop/plasma-workspace to `v6.7.1` caused API skew with
   master-tracked deps (link-time Xcursor dependency failures)
 - Tracking from tromso_x is blocked by junction boundaries
 - The `scripts/track-refs-local.sh` script uses a BST session limit of 50
@@ -135,6 +108,7 @@ to stable releases was attempted but abandoned because:
 | `elements/oci/kde-minimal.bst` | New minimal KDE-only build target | 2026-06-24 |
 | `elements/tromso/deps-minimal.bst` | Minimal deps for kde-minimal | 2026-06-24 |
 | `.github/workflows/update-refs.yml` | Updated tracking description | 2026-06-23 |
+| `Justfile` | Added build-kde, export-kde, generate-bootable-kde recipes | 2026-06-24 |
 
 ### kde-build-meta-x Changes
 
@@ -148,7 +122,7 @@ to stable releases was attempted but abandoned because:
 
 ```bash
 # Aurora (full) build
-BST_FLAGS="--no-interactive" just bst build oci/tromso.bst && just export
+just build
 just generate-bootable-image && just boot-vm
 
 # Minimal KDE build
