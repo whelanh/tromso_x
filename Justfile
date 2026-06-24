@@ -223,6 +223,103 @@ export:
     just chunkify "{{image_name}}:{{image_tag}}" || \
         echo "==> Warning: chunkify failed (see issue #20); image will be pushed unchunked"
 
+# ── Minimal KDE-only build (no Aurora overlay) ─────────────────────────
+[group('build')]
+build-kde:
+    echo "==> Building KDE Minimal OCI image..."
+    BST_FLAGS="--no-interactive " just bst build oci/kde-minimal.bst
+    just export-kde
+
+[group('build')]
+export-kde:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SUDO_CMD=""
+    if [ "$(id -u)" -ne 0 ]; then
+        SUDO_CMD="sudo"
+    fi
+    echo "==> Exporting KDE Minimal OCI image..."
+    rm -rf .build-out-kde
+    just bst artifact checkout oci/kde-minimal.bst --directory /src/.build-out-kde
+    echo "==> Loading and squashing OCI image..."
+    IMAGE_ID=$($SUDO_CMD podman pull -q oci:.build-out-kde)
+    rm -rf .build-out-kde
+    DATE_TAG="$(date -u +%Y%m%d)"
+    printf 'FROM %s\nRUN sed -i "s/^VERSION_ID=.*/VERSION_ID=\\"%s\\"/" /usr/lib/os-release \\\n    && sed -i "s/^IMAGE_VERSION=.*/IMAGE_VERSION=\\"%s\\"/" /usr/lib/os-release\n' "$IMAGE_ID" "$DATE_TAG" "$DATE_TAG" \
+        | $SUDO_CMD podman build --pull=never --security-opt label=type:unconfined_t -t "tromso-kde:latest" -f - .
+    $SUDO_CMD podman rmi "$IMAGE_ID" || true
+    echo "==> Export complete: tromso-kde:latest"
+
+[group('test')]
+generate-bootable-kde $base_dir=base_dir $filesystem=filesystem:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! sudo podman image exists "tromso-kde:latest"; then
+        echo "ERROR: Image 'tromso-kde:latest' not found in podman." >&2
+        echo "Run 'just build-kde' first." >&2
+        exit 1
+    fi
+    if [ ! -e "${base_dir}/bootable.raw" ] ; then
+        echo "==> Creating 30G sparse disk image..."
+        fallocate -l 30G "${base_dir}/bootable.raw"
+    fi
+    echo "==> Installing OS to disk image via bootc..."
+    sudo podman run --rm --privileged --pid=host \
+        -v /var/lib/containers:/var/lib/containers \
+        -v /run/containers:/run/containers \
+        -v /dev:/dev \
+        -v "${base_dir}:/data" \
+        --security-opt label=type:unconfined_t \
+        "tromso-kde:latest" \
+        bash -c "/usr/bin/bootc install to-disk \
+            --via-loopback /data/bootable.raw \
+            --generic-image \
+            --filesystem ${filesystem} \
+            --wipe \
+            --bootloader none \
+            --karg systemd.firstboot=no \
+            --karg console=tty0 \
+            --karg console=ttyS0 \
+            --karg systemd.debug_shell=ttyS1"
+    echo "==> Manually installing systemd-boot EFI files..."
+    LOOP=$(sudo losetup -f --show -P "${base_dir}/bootable.raw")
+    sudo mkdir -p /mnt/tromso-efi /mnt/tromso-root-efi
+    sudo mount "${LOOP}p2" /mnt/tromso-efi
+    sudo mount "${LOOP}p3" /mnt/tromso-root-efi
+    SYSROOT=$(ls -d /mnt/tromso-root-efi/ostree/deploy/default/deploy/*.0 2>/dev/null | head -1)
+    EFI_SRC="${SYSROOT}/usr/lib/systemd/boot/efi"
+    sudo install -Dm755 "${EFI_SRC}/systemd-bootx64.efi" /mnt/tromso-efi/EFI/systemd/systemd-bootx64.efi
+    sudo install -Dm755 "${EFI_SRC}/systemd-bootx64.efi" /mnt/tromso-efi/EFI/BOOT/BOOTX64.EFI
+    ENTRY=$(ls /mnt/tromso-root-efi/boot/loader.1/entries/ostree-1.conf 2>/dev/null | head -1)
+    if [ -n "$ENTRY" ]; then
+        BOOT_OSTREE=$(grep -Po '(?<=initrd )/boot/ostree/[^ ]+' "$ENTRY" | head -1 | xargs dirname)
+        sudo mkdir -p "/mnt/tromso-efi${BOOT_OSTREE}"
+        sudo cp -r "/mnt/tromso-root-efi${BOOT_OSTREE}/." "/mnt/tromso-efi${BOOT_OSTREE}/"
+        sudo mkdir -p /mnt/tromso-efi/loader/entries
+        sudo cp "$ENTRY" /mnt/tromso-efi/loader/entries/
+        echo "timeout 5" | sudo tee /mnt/tromso-efi/loader/loader.conf
+    fi
+    sudo umount /mnt/tromso-efi /mnt/tromso-root-efi
+    sudo losetup -d "$LOOP"
+    echo "==> Setting root password..."
+    LOOP2=$(sudo losetup -f --show -P "${base_dir}/bootable.raw")
+    sudo mkdir -p /mnt/tromso-root-setup
+    sudo mount "${LOOP2}p3" /mnt/tromso-root-setup
+    DEPLOY2=$(ls -d /mnt/tromso-root-setup/ostree/deploy/default/deploy/*.0 2>/dev/null | head -1)
+    ROOT_HASH=$(openssl passwd -6 'aurora')
+    sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "${DEPLOY2}/etc/shadow"
+    VAR_ROOT="/mnt/tromso-root-setup/ostree/deploy/default/var/roothome"
+    if [ -f "${HOME}/.ssh/id_ed25519.pub" ]; then
+        sudo install -Dm600 -o root -g root "${HOME}/.ssh/id_ed25519.pub" "${VAR_ROOT}/.ssh/authorized_keys"
+        sudo chmod 700 "${VAR_ROOT}/.ssh"
+        echo "    SSH authorized_keys installed for root"
+    fi
+    sudo umount /mnt/tromso-root-setup
+    sudo losetup -d "$LOOP2"
+    echo "==> Bootable disk image ready: ${base_dir}/bootable.raw"
+    sync
+    rm -f "${base_dir}/bootable.qcow2"
+
 # ── Clean ─────────────────────────────────────────────────────────────
 [group('build')]
 clean:
