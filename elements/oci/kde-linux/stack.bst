@@ -57,5 +57,6 @@ public:
     - sh -c 'for f in /lib/modules/*/*.json /lib/modules/*/*.so /lib/modules/*/*.a; do rm -f "$f"; done'
     # Restore sudo's setuid bit in the final composed image.
     - chmod u+s /usr/bin/sudo || true
-    # Match Arch's kwin packaging so the greeter compositor can request realtime priority.
-    - setcap cap_sys_nice+ep /usr/bin/kwin_wayland
+    # kwin_wayland capabilities are restored in the OCI build script
+    # (oci/tromso.bst / oci/kde-minimal.bst) where fakecap is available.
+    # setcap fails during compose integration without CAP_SETFCAP.
