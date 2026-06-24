@@ -1,169 +1,166 @@
 # Build Status & Next Steps
 
-Last updated: 2026-06-22
+Last updated: 2026-06-24
 
 ## Current State
 
 ### Working
-- **Full build completes** — 1169 elements build successfully
-- **KDE Plasma 6.8 Dev desktop** loads with proper fonts and wallpaper
-- **plasma-login-manager** login screen works — SDDM fully replaced (see fixed #1)
-- **Network, System Settings** functional
-- **Qt6 6.11.1** auto-tracked via git_repo with `track: 'v6.*'`
-- **KDE Frameworks/Plasma/Apps** tracked to latest master
-- **Vulkan-headers 1.4.354** override resolves kwin RAII compat issues
-- **Local tracking script** (`scripts/track-refs-local.sh`) reliably updates all refs
-- **OCI image** builds correctly — all fixes verified inside the container
-- **Runtime dependency audit complete** — kde/apps and kde/plasma elements now declare
-  app-specific runtime libs in `depends:` (cross-checked against Arch PKGBUILD).
+- **Two build targets**: `oci/tromso.bst` (Aurora overlay) and `oci/kde-minimal.bst` (pure KDE)
+  - `just build` / `just build-kde` — full build + export
+  - `just generate-bootable-image` / `just generate-bootable-kde` — VM disk image
+- **KDE Plasma 6.7.80 desktop** loads with fonts and wallpaper
+- **plasma-login-manager** login screen works — SDDM fully replaced
+- **Network, System Settings, Konsole** functional
+- **Discover connects to Flathub** and shows remote apps
+- **Discover "Installed" tab** shows system apps (FIXED 2026-06-24)
+- **CA certificates** work for TLS connections
+- **Local `just` recipes** for both Aurora and minimal KDE images
+- **OCI image** builds and boots correctly via bootc
 
-### Known Issues (Priority Order)
+### Fixed Issues
 
-#### 1. plasma-login-manager Migration (FIXED 2026-06-22)
-SDDM replaced by `plasma-login-manager`. Element `kde/plasma/plasma-login-manager.bst`
-builds and links cleanly (KCMUtils + libPlasma link-closure build-depends resolved).
-PLM ships its own PAM configs to `/usr/lib/pam.d/` (immutable `/usr`), eliminating the
-SDDM `/etc/pam.d/sddm*` bootc workaround entirely. System-config wires `plasmalogin.service`
-as the display manager with a service drop-in for software rendering in VMs.
+#### 1. OCI /etc vs /usr/etc Convention (FIXED 2026-06-23)
+bootc requires exactly one of `/etc` or `/usr/etc` in the OCI image. Previously
+`kde-linux/image.bst` and `tromso.bst` used opposite conventions, causing "Tree
+contains both /etc and /usr/etc" deployment errors. Fixed with parent-aware
+normalization in both image builders that matches each layer to its parent.
 
-#### 2. Runtime Dependency Audit (FIXED 2026-06-22)
-- `konsole` → `core-deps/libssh.bst` runtime dep (fixed upstream)
-- `kcalc` → gmp/mpfr/mpc runtime deps added to `depends:`
-- `gwenview` → jpeg/png/tiff/lcms/exiv2, `okular` → libtiff, `kate` → gpgmepp,
-  `kdeconnect` → libei/libevdev/libfakekey, `ark` → libarchive,
-  `libksysguard` → libnl, `kpipewire` → ffmpeg, `spectacle` → ffmpeg/libva
-- Cross-checked against Arch PKGBUILD `depends()` for kde/apps + kde/plasma.
+#### 2. Sudo setuid (FIXED 2026-06-23)
+The compose step strips the setuid bit from `/usr/bin/sudo`. Added `chmod u+s`
+in the OCI build script as a safety net.
 
-#### 3. Empty Application Launcher + Sycoca / Desktop File Indexing (UNRESOLVED)
-**Status: Root cause not determined. All pushed fixes verified on a fresh image
-(2026-06-22) — no improvement. Fresh-image theory ruled out.**
+#### 3. systemd-homed D-Bus Activation (FIXED 2026-06-23)
+`systemd-homed.service` was masked but its D-Bus activation file
+(`dbus-org.freedesktop.home1.service`) was still active, causing accountsservice
+to trip over a broken home1 activation during user enumeration. Masked all homed
+services and their sub-services.
 
-**Symptoms:**
-- Panel launcher "All Applications" shows no entries
-- KRunner (Alt+F2) cannot find newly-installed apps (e.g. plasma-discover)
-- Discover → Installed category shows "Nothing Found"
-- System Settings → Default Apps doesn't recognize any installed apps
-- `kbuildsycoca6 --noincremental` runs without error but the sycoca cache is either
-  not being read or does not contain application entries
+#### 4. CA Certificates (FIXED 2026-06-23)
+CA certs were installed to `/etc/pki/` which bootc's tmpfs overlay hides at runtime.
+Fixed by installing certs to `/usr/etc/pki/` and ensuring the `/usr/etc/` convention
+is used consistently.
 
-**Diagnostics performed (SSH on live VM):**
-- `/usr/share/applications/` — 142 `.desktop` files present and readable ✓
-- `/etc/xdg/menus/applications.menu` — present with correct `<DefaultAppDirs/>` content ✓
-- kded6 running with `XDG_DATA_DIRS=/usr/share:/usr/local/share` ✓
-- `XDG_SESSION_TYPE=wayland` on fresh image (was `tty` on older VM) ✓
-- `LANG=C.UTF-8` set in plasmashell environment (Qt still warns "Detected locale C") ✓
-- `kbuildsycoca6` produces a 405KB cache when run with `LANG=C.UTF-8 XDG_DATA_DIRS`,
-  but kded6 rebuilds a 227KB cache that overwrites it
-- `locale -a` confirms `C.utf8` and `en_US.utf8` are available on the system
-- No `kded_ksycoca` or sycoca-related kded6 modules found under `/usr/lib*/kded/`
+#### 5. Sycoca / XDG Menu Not Found (FIXED 2026-06-24)
+`kde-settings.sh` was overriding `XDG_CONFIG_DIRS` without including `/etc/xdg`.
+This prevented the XDG menu system from finding `applications.menu`, causing
+both the launcher and Discover's "Installed" tab to show nothing. Fixed by
+always including `/etc/xdg` in the XDG_CONFIG_DIRS path. Also added
+`KDEDIRS=/usr` and `KDE_FULL_SESSION=true` to match working KDE hosts.
 
-**Comparison with working Fedora Kinoite system:**
-- Kinoite sycoca cache: 615–676KB vs Aurora's 405KB (manually built) / 227KB (kded6 auto-build)
-- Kinoite locale: `en_US.UTF-8` vs Aurora's `C.UTF-8`
-- Kinoite has full locale data installed
-- No significant structural differences in XDG variables or kded6 configuration
+#### 6. Flatpak User Install (FIXED 2026-06-24)
+Two issues prevented non-root users from installing Flatpaks:
+1. **Polkit**: the default flatpak polkit rule only covers `app-install`,
+   `runtime-install`, etc. — not internal operations `Deploy` and `GetRevokefsFd`.
+   Added `99-flatpak-wheel.rules` allowing all `org.freedesktop.Flatpak.*` actions
+   for active wheel-group members (dropping `subject.local` which is unreliable on bootc).
+2. **fusermount3**: the compose step strips setuid bits. Added `chmod u+s`
+   on fusermount3 so non-root users can mount/unmount FUSE filesystems during
+   flatpak installation.
 
-**Attempted fixes (all verified on fresh build, none resolved the issue):**
-1. Install `/etc/xdg/menus/applications.menu` (the menu definition XML)
-2. Run `kbuildsycoca6 --noincremental` at OCI build time in overlay chroot
-3. Add XDG autostart `.desktop` that runs kbuildsycoca6 on user login
-4. Set `XDG_DATA_DIRS=/usr/share:/usr/local/share` system-wide via `/etc/environment.d/`
-5. Delete old caches, rebuild with `LANG=C.UTF-8 XDG_DATA_DIRS`, restart plasmashell
-6. Rebuild cache, terminate session, log back in fresh
-7. Set `LANG=C.UTF-8` + cache cleanup in autostart Exec, move to phase 2
+#### 7. plasma-desktop X11 Build (FIXED 2026-06-24)
+`BUILD_X11=OFF` was disabling the entire kickoff/kicker/taskmanager plasmoid build.
+Changed to `ON`; the X11 headers were already in build-depends, so this added no
+new runtime dependencies. The plasmoids are compiled as `.so` plugins at
+`/usr/lib/plugins/plasma/applets/`.
 
-**Working theories for root cause:**
-1. The sycoca cache built by `kbuildsycoca6` is in a format that plasmashell / kded6
-   cannot read, possibly due to a KF6 version mismatch between build and runtime.
-2. Desktop-file XML parsing fails silently due to locale issues (`LANG=C` →
-   `C.UTF-8` fallback may not be sufficient; full `en_US.UTF-8` locale may be needed).
-3. Composefs/bootc filesystem metadata (xattrs, timestamps) causes sycoca to
-   reject desktop files from the read-only layer.
-4. A required KDE service plugin for application model bridging is not loaded
-   (no `kded_ksycoca` module found).
+### Known Issues
 
-**Recommended next investigative steps:**
-- Install full glibc locale data and test with `LANG=en_US.UTF-8`.
-- Run `strace kbuildsycoca6 --noincremental` to trace which files/dirs are accessed
-  during indexing (requires `strace` on the image).
-- Build and boot the KDE Linux base image (without Aurora layer) to determine if
-  the problem exists there too — if the base image works, the issue is in the
-  Aurora layer; if not, it's a KDE/fd-sdk integration issue.
-- Test `plasmashell` with `QT_LOGGING_RULES=org.kde.ksycoca=true` for debug output
-  about sycoca database loading.
-- Attempt building sycoca cache on a different system with the same KF6 versions
-  and transplanting the cache file.
+#### 1. Application Launcher Empty (PARTIALLY FIXED — Discover works, kickoff/kicker does not)
+**Fixed**: Discover's "Installed" tab now shows system applications (the XDG menu fix).
 
-**Locale:**
-- Qt reports: "Detected locale 'C' with character encoding 'ANSI_X3.4-1968'".
-  `LANG=C.UTF-8` fallback works in-user-session (`locale -a` confirms `C.utf8`
-  and `en_US.utf8` are available).
-- May contribute to sycoca parsing failures (see issue #3).
+**Still broken**: The kickoff/kicker application launcher in the Plasma panel shows no
+applications. KRunner similarly cannot find installed desktop apps.
 
----
+**Evidence gathered (2026-06-24):**
+- Sycoca cache is correct: `kbuildsycoca6 --menutest` shows 24 apps even from
+  plasmashell's exact environment
+- kickoff/kicker `.so` plugins are installed and loaded by plasmashell
+- kded6 is running with 19 modules, properly maintains the sycoca cache
+- `KApplicationTrader::query` (the method kickoff/kicker/krunner use) returns
+  empty results even though the sycoca cache has valid entries
+- Both plasmashell and kbuildsycoca6 link the SAME `libKF6Service.so.6`
+- The hash mismatch bug in kservice (`7e01820`, March 2026) is fixed in our build
 
-## Post-Boot Workaround Script
+**Ruled out**:
+- Aurora overlay is NOT the cause (kde-minimal build has same issue)
+- Missing plasmoid files (they're compiled `.so` plugins, not QML files)
+- Locale / LANG issues (set to `en_US.UTF-8`)
+- Compose filtering (all plugins present)
+- Sycoca cache corruption (verified correct)
+- KService version mismatch (same library linked everywhere)
 
-After each `just generate-bootable-image` + `just boot-vm`:
+**Comparison with working host** (Plasma 6.7.80):
+- Host sycoca cache: 628-691KB vs VM: 226-396KB
+- Host XDG_CONFIG_DIRS includes `/etc/xdg` (now fixed on VM)
+- Host has `KDE_FULL_SESSION=true` and `KDEDIRS=/usr` (now set on VM)
+- Host has 29 kded6 modules vs VM 19 (additional KDE packages)
+- Host kservices6: 0 files (same as VM — no system-level service types)
+- Host desktop files: 208 vs VM: 136
 
-```bash
-ssh -p 2222 root@127.0.0.1
+**Recommended next step**: After rebuild with the `XDG_CONFIG_DIRS`, `KDEDIRS`,
+and `KDE_FULL_SESSION` fixes, test the launcher again. If still broken, the
+next investigation should focus on what `KApplicationTrader::query` does
+internally vs what `--menutest` does differently. The sycoca cache is correct
+but the launcher model doesn't consume it.
 
-# 1. Create user (still manual until first-boot user setup is automated)
-useradd -m -G video,render,input,audio -s /bin/zsh aurora
-echo 'aurora:aurora' | chpasswd
+#### 2. Unprivileged User Namespaces (UNRESOLVED)
+Flatpak `run` shows "CanCreateUserNamespace() clone() failure: EPERM". This
+means unprivileged user namespaces are restricted on this kernel. Flatpak apps
+can be installed (with the polkit + fusermount fixes) but may fail at runtime.
+May need `kernel.unprivileged_userns_clone=1`.
 
-# 2. Download CA certificates (manual workaround — build-time fixes deployed
-#    but not working; see Known Issues #5):
-mkdir -p /etc/ssl/certs
-curl -k -o /etc/ssl/certs/ca-certificates.crt https://curl.se/ca/cacert.pem
+#### 3. Tracker Dependencies (kcm_plasmalogin) (UNRESOLVED, LOW PRIORITY)
+`Could not unmount revokefs-fuse` errors during flatpak install (cosmetic,
+flatpaks install successfully despite the warning).
 
-# 3. Application launcher / sycoca (UNRESOLVED — see Known Issues #3).
-#    The panel launcher and Discover's "Installed" view remain empty.
-#    Workaround: launch apps via Konsole or KRunner (Alt+F2) by binary name,
-#    e.g. plasma-discover, dolphin, systemsettings.
-```
+## Tracking Strategy
 
----
+All KDE elements track `master` (git HEAD). Using `refs/tags/v6.*.?` to pin
+to stable releases was attempted but abandoned because:
+- BST tracking across junctions requires `project.refs` (not configured)
+- The pattern `v6.*.?` excludes pre-release tags (`.90`, `-rc`) but tracking
+  from within kde-build-meta-x failed due to container image issues
+- Pinng plasma-desktop/plasma-workspace to `v6.7.1` caused API skew with
+  master-tracked deps (link-time Xcursor dependency failures)
+- Tracking from tromso_x is blocked by junction boundaries
+- The `scripts/track-refs-local.sh` script uses a BST session limit of 50
 
-## Key Modifications Made to kde-build-meta-x
+## Key Build Changes
+
+| File | Change | Date |
+|------|--------|------|
+| `elements/oci/tromso.bst` | Parent-aware /etc normalization, sudo setuid, fusermount3 setuid | 2026-06-23/24 |
+| `elements/oci/kde-linux/image.bst` | Parent-aware /etc normalization (matching) | 2026-06-23 |
+| `elements/tromso/system-config.bst` | /etc/xdg in XDG_CONFIG_DIRS, KDEDIRS, KDE_FULL_SESSION, homed masks, flatpak polkit rule, LANG env | 2026-06-23/24 |
+| `elements/oci/kde-minimal.bst` | New minimal KDE-only build target | 2026-06-24 |
+| `elements/tromso/deps-minimal.bst` | Minimal deps for kde-minimal | 2026-06-24 |
+| `.github/workflows/update-refs.yml` | Updated tracking description | 2026-06-23 |
+
+### kde-build-meta-x Changes
 
 | Change | Reason |
 |--------|--------|
-| `core-deps/vulkan-headers.bst` override (1.4.354) | kwin RAII structured binding compat |
-| `core-deps/libssh.bst` new element | Konsole SSH support |
-| Qt6 tar→git_repo conversion (30 elements) | Auto-tracking via `v6.*` |
-| `qt6-qtbase.bst` fontconfig/freetype/harfbuzz/libpng deps | Font rendering |
-| `qt6-qttools.bst` disable Qt Assistant | Missing qlitehtml submodule |
-| `qt6-qt3d.bst` disable assimp | Missing assimp submodule |
-| `qt6-qtgraphs.bst` new element | kinfocenter graphs |
-| `kwin.bst` patches (killer, qqml-include) | Build fixes |
-| `kwin.bst` vulkan-icd-loader + kitemmodels deps | Missing build/link deps |
-| Freedesktop-sdk kernel config patches removed | aarch64-only, broke x86_64 |
-| Various plasma-workspace/konsole patches removed | Fixed upstream |
-| kirigami-addons unpinned to track master | Needed by plasma-nm |
+| `plasma-desktop.bst` BUILD_X11=ON | Enable kickoff/kicker plasmoid build |
+| `plasma-desktop.bst` / `plasma-workspace.bst` url: github:KDE | KDE GitHub mirror (invent.kde.org unreachable from BST container) |
+| `plasma-login-manager.bst` xorg-lib-xcursor build-dep | v6.7.1 libklookandfeel requires Xcursor at link time |
 
 ## Build & Test Commands
 
 ```bash
-# Track all refs to latest upstream
-bash scripts/track-refs-local.sh
-
-# Build
+# Aurora (full) build
 BST_FLAGS="--no-interactive" just bst build oci/tromso.bst && just export
+just generate-bootable-image && just boot-vm
 
-# Generate VM image
-rm -f bootable.raw bootable.qcow2
-just generate-bootable-image
-qemu-img convert -f raw -O qcow2 bootable.raw bootable.qcow2
-
-# Boot VM
+# Minimal KDE build
+just build-kde
+just generate-bootable-kde
 just boot-vm
 
 # SSH access
 ssh -p 2222 root@127.0.0.1      # root (password: aurora)
 ssh -p 2222 aurora@127.0.0.1    # user (password: aurora)
 
-# VNC display
-# Connect to 127.0.0.1:5900
+# Create user
+useradd -m -G video,render,input,audio,wheel -s /bin/zsh aurora
+echo 'aurora:aurora' | chpasswd
 ```
