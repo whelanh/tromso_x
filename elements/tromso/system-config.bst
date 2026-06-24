@@ -432,6 +432,25 @@ config:
     # flatpak-preinstall: requires Flatpak infrastructure not present in base image
     ln -sf /dev/null "%{install-root}/etc/systemd/system/flatpak-preinstall.service"
 
+  # ── Flatpak polkit rule for wheel group ───────────────────────────────
+  # The default flatpak polkit rules only cover app-install,
+  # runtime-install, app-uninstall, runtime-uninstall, and modify-repo.
+  # Internal flatpak system-helper operations (Deploy, GetRevokefsFd) are
+  # not covered, causing "not allowed for user" errors even for wheel
+  # members.  This blanket rule allows all org.freedesktop.Flatpak.*
+  # actions for active local wheel users with no password prompt.
+  - |
+    install -Dm644 /dev/stdin "%{install-root}/usr/share/polkit-1/rules.d/99-flatpak-wheel.rules" <<'EOF'
+    polkit.addRule(function(action, subject) {
+        if (action.id.startsWith("org.freedesktop.Flatpak.") &&
+            subject.active == true && subject.local == true &&
+            subject.isInGroup("wheel")) {
+                return polkit.Result.YES;
+        }
+        return polkit.Result.NOT_HANDLED;
+    });
+    EOF
+
   # ── NetworkManager enable ────────────────────────────────────────────
   # NetworkManager is the standard network manager for Aurora (same as
   # gnome-build-meta / Dakota).  systemd-networkd is explicitly disabled
@@ -528,3 +547,4 @@ public:
         - '%{sysconfdir}/environment.d/50-aurora-xdg.conf'
         - '%{sysconfdir}/xdg/plasma-workspace/env/kde-settings.sh'
         - '%{datadir}/kde-settings/kde-profile/default/xdg/kdeglobals'
+        - '%{datadir}/polkit-1/rules.d/99-flatpak-wheel.rules'
