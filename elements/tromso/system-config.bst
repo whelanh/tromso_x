@@ -335,7 +335,11 @@ config:
     install -Dm644 /dev/stdin \
       "%{install-root}/etc/xdg/plasma-workspace/env/kde-settings.sh" <<'EOF'
     # Activate Aurora system-wide KDE defaults profile (mirrors Fedora kde-settings RPM)
-    export XDG_CONFIG_DIRS=/usr/share/kde-settings/kde-profile/default/xdg${XDG_CONFIG_DIRS:+:$XDG_CONFIG_DIRS}
+    # Always include /etc/xdg so the XDG menu system can find applications.menu
+    # and desktop-file directories for the application launcher and Discover.
+    export XDG_CONFIG_DIRS=/usr/share/kde-settings/kde-profile/default/xdg:/etc/xdg${XDG_CONFIG_DIRS:+:$XDG_CONFIG_DIRS}
+    export KDEDIRS=/usr
+    export KDE_FULL_SESSION=true
     EOF
 
   # ── KDE default fonts via kde-settings profile ──────────────────────
