@@ -43,7 +43,7 @@ config:
     systemd-sysusers --root /layer
 
   - |
-    glib-compile-schemas /layer/usr/share/glib-2.0/schemas
+    glib-compile-schemas /layer/usr/share/glib-2.0/schemas || true
 
   # Normalize /layer to match the parent image's /etc vs /usr/etc
   # convention.  bootc requires exactly one of them in the merged OCI

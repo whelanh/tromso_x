@@ -45,7 +45,7 @@ config:
 
     - |
       if [ -d /layer/usr/share/glib-2.0/schemas ]; then
-        glib-compile-schemas /layer/usr/share/glib-2.0/schemas
+        glib-compile-schemas /layer/usr/share/glib-2.0/schemas || true
       fi
 
     - |
