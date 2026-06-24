@@ -161,6 +161,6 @@ ssh -p 2222 root@127.0.0.1      # root (password: aurora)
 ssh -p 2222 aurora@127.0.0.1    # user (password: aurora)
 
 # Create user
-useradd -m -G video,render,input,audio,wheel -s /bin/zsh aurora
+useradd -m -G video,render,input,audio,wheel,flatpak -s /bin/zsh aurora
 echo 'aurora:aurora' | chpasswd
 ```
