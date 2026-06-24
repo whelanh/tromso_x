@@ -413,7 +413,7 @@ config:
   # does not fail on UTF-8 content (Qt6 interprets 'C' as ASCII).
   - |
     install -Dm644 /dev/stdin "%{install-root}/etc/environment.d/50-aurora-xdg.conf" <<'EOFX'
-    XDG_DATA_DIRS=/usr/share:/usr/local/share
+    XDG_DATA_DIRS=/var/lib/flatpak/exports/share:/usr/local/share:/usr/share
     LANG=en_US.UTF-8
     EOFX
 
