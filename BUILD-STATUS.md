@@ -86,6 +86,22 @@ can be installed but may fail at runtime. May need `kernel.unprivileged_userns_c
 `Could not unmount revokefs-fuse` warnings appear during flatpak install but
 do not prevent successful installation. The warning is cosmetic.
 
+## TODO
+
+### SELinux Integration
+The image currently runs without mandatory access control. freedesktop-sdk
+already ships `libselinux` and the kernel has SELinux built in. What's missing:
+
+1. **SELinux policy packages** — add to the build stack (reference: gnome-build-meta
+   already integrates SELinux)
+2. **Filesystem labeling** — run `setfiles` to label the filesystem with the
+   loaded policy in the OCI build script (after layer assembly, before `build-oci`)
+3. **Kernel args** — add `selinux=1 security=selinux` to the bootc kargs
+   (currently in `oci/tromso-ostree.bst` and the `generate-bootable-image` recipe)
+
+The gnome-build-meta project provides the reference pattern for how to wire
+SELinux into a freedesktop-sdk-based build.
+
 ## Tracking Strategy
 
 All KDE elements track `master` (git HEAD). Using `refs/tags/v6.*.?` to pin
