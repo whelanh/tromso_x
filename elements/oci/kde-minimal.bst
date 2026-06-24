@@ -76,6 +76,9 @@ config:
       # can run privileged commands.  The stack integration command does this
       # too, but compose may re-strip it.
       chmod u+s /layer/usr/bin/sudo || true
+      # Flatpak requires fusermount3 to have setuid so non-root users
+      # can mount/unmount FUSE filesystems for app installation.
+      chmod u+s /layer/usr/bin/fusermount3 || true
       # Refresh linker cache in the composed rootfs so the login manager can
       # resolve Qt6
       # libraries installed under /usr/lib at first boot.

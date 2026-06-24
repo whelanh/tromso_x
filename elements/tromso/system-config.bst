@@ -443,7 +443,7 @@ config:
     install -Dm644 /dev/stdin "%{install-root}/usr/share/polkit-1/rules.d/99-flatpak-wheel.rules" <<'EOF'
     polkit.addRule(function(action, subject) {
         if (action.id.startsWith("org.freedesktop.Flatpak.") &&
-            subject.active == true && subject.local == true &&
+            subject.active == true &&
             subject.isInGroup("wheel")) {
                 return polkit.Result.YES;
         }
