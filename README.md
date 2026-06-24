@@ -82,7 +82,7 @@ just boot-vm
 ssh -p 2222 root@localhost
 
 # Create a user for graphical login
-useradd -m -G video,render,input,audio,wheel -s /bin/zsh aurora
+useradd -m -G video,render,input,audio,wheel,flatpak -s /bin/zsh aurora
 echo 'aurora:aurora' | chpasswd
 
 # VNC viewer
