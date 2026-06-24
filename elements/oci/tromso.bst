@@ -7,7 +7,7 @@ build-depends:
   - kde-build-meta.bst:freedesktop-sdk.bst:components/glib.bst
   - kde-build-meta.bst:freedesktop-sdk.bst:components/sed.bst
   - kde-build-meta.bst:freedesktop-sdk.bst:vm/prepare-image.bst
-  - filename: kde-build-meta.bst:oci/kde-linux/image.bst
+  - filename: oci/kde-linux/image.bst
     config:
       location: /parent
   - filename: oci/layers/tromso.bst
