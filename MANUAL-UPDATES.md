@@ -97,9 +97,28 @@ There are currently no intentionally pinned elements.  All KDE, Qt6, and
 core-deps elements track their upstream `master` branch (or `v6.*` for Qt6)
 and are automatically refreshed by `scripts/track-refs-local.sh`.
 
-(Previous pinned elements that have been unpinned: SDDM was replaced by
-plasma-login-manager; plasma-vault was unpinned from `Plasma/6.6` to
-`master` on 2026-06-22.)
+### Version-pinning attempt (2026-06-24)
+
+An attempt was made to pin KDE Frameworks and Plasma elements to stable
+releases using `track: 'refs/tags/v6.*.?'` (single-digit patch version,
+excluding pre-release tags like `.90` and `-rc`). This was abandoned because:
+
+1. **BST tracking across junctions is blocked**: `bst source track` cannot
+   track elements across junction boundaries without `project.refs` configured.
+   Tracking must be done from within the `kde-build-meta-x` project directly.
+
+2. **Container image issues**: Running BST within kde-build-meta-x directly
+   fails due to container image mismatch with the project's Justfile.
+
+3. **API skew**: When plasma-desktop and plasma-workspace were manually pinned
+   to `v6.7.1` while deps tracked master, link-time failures occurred
+   (e.g. `libklookandfeel` needed `libXcursor` at link time).
+
+4. **Session limits**: `bst source track` has a default session limit of ~50
+   elements, requiring multiple tracking passes for 111+ elements.
+
+If stable tracking is revisited in the future, consider using BST's
+`project.refs` storage and increasing session limits.
 
 ### How to pin an element (if needed in the future)
 

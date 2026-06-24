@@ -4,45 +4,39 @@
 
 **Aurora Tromso** is a BuildStream-based KDE Linux OCI/bootc image, modeled on Project Bluefin's
 [`projectbluefin/dakota`](https://github.com/projectbluefin/dakota). It builds KDE Plasma 6 on top
-of freedesktop-sdk and publishes a bootable OCI image to `ghcr.io/tuna-os/tromso`.
+of freedesktop-sdk and publishes a bootable OCI image.
 
-*Tromso_x is a fork from the original Tromso with the aim of using the latest KDE, Qt6, and linux packages as soon as they are available to produce a "leading edge" rolling release.*
+*Tromso_x is a fork aiming to use the latest KDE, Qt6, and linux packages to produce a "leading edge" rolling release.*
 
-Tromso_x's companion repo is [whelanh/kde-build-meta-x](https://github.com/whelanh/kde-build-meta-x). 
+Tromso_x's companion repo is [whelanh/kde-build-meta-x](https://github.com/whelanh/kde-build-meta-x).
 
-The workflow is done locally on your own machine and is described in [MANUAL_UPDATES.md](https://github.com/whelanh/tromso_x/blob/main/MANUAL-UPDATES.md)
+The workflow is done locally on your own machine and is described in [MANUAL_UPDATES.md](MANUAL-UPDATES.md).
 
-**Status: 6/21/2026: Builds successfully and boots to a working KDE Plasma 6.8 Dev Wayland desktop., However there are remaining issues to be fixed that I will tackle summarized in [BUILD-STATUS.md](https://github.com/whelanh/tromso_x/blob/main/BUILD-STATUS.md)**
-
-<img width="2641" height="1798" alt="Screenshot_20260622_131917" src="https://github.com/user-attachments/assets/1944b7d2-b36b-4f53-a018-ed856f9f42f0" />
-<img width="1250" height="854" alt="Screenshot_20260622_070727" src="https://github.com/user-attachments/assets/853d8c4e-eee8-4568-be45-bc5e9ff90cad" />
-
-
+**Status: 2026-06-24: Builds successfully and boots to a working KDE Plasma 6.7.80 Wayland desktop.
+Discover's "Installed" tab now works. Application launcher still empty — being investigated.
+See [BUILD-STATUS.md](BUILD-STATUS.md) for full details.**
 
 ## Architecture
 
 Aurora Tromso uses a two-repo model:
 
 ```
-tuna-os/tromso          (this repo — Aurora customizations + OCI composition)
+whelanh/tromso_x          (this repo — Aurora customizations + OCI composition)
 ├── elements/
-│   ├── kde-build-meta.bst    junction → hanthor/kde-build-meta
-│   ├── tromso/               Aurora Tromso-specific layers (theming, apps, overlays)
-│   └── oci/tromso.bst        top-level build target → ghcr.io/tuna-os/tromso
+│   ├── kde-build-meta.bst    junction → whelanh/kde-build-meta-x
+│   ├── tromso/               Aurora-specific layers (theming, apps, overlays)
+│   ├── oci/tromso.bst        top-level build target (Aurora overlay)
+│   └── oci/kde-minimal.bst   minimal KDE-only build target (no overlay)
 └── Justfile
 
-hanthor/kde-build-meta  (KDE .bst elements — KDE Linux base image)
+whelanh/kde-build-meta-x  (KDE .bst elements — KDE Linux base image)
 └── elements/kde/
     ├── qt6/        (~30 elements — qt6-qtbase, qt6-qtdeclarative, etc.)
     ├── frameworks/  (~70 elements — kcoreaddons, kio, kirigami, etc.)
     ├── libs/        (~17 elements — libkscreen, qcoro, phonon, etc.)
-    ├── plasma/      (~41 elements — plasma-workspace, kwin, sddm, etc.)
-    └── apps/        (~9 elements — dolphin, kate, okular, gammaray, etc.)
+    ├── plasma/      (~41 elements — plasma-workspace, kwin, plasma-desktop, etc.)
+    └── apps/        (~13 elements — dolphin, kate, discover, okular, etc.)
 ```
-
-`kde-build-meta` mirrors the role of `gnome-build-meta` in the GNOME ecosystem — it builds a
-complete KDE Linux desktop that can be used standalone or as the base for derived images like
-Aurora Tromso.
 
 ## Quick Start
 
@@ -52,119 +46,95 @@ Aurora Tromso.
 - [`just`](https://github.com/casey/just) (task runner)
 - ~100 GB free disk space for build cache
 
-### Build
+### Build (Aurora — full image with overlay)
 
 ```bash
-git clone https://github.com/tuna-os/tromso.git
-cd tromso
+git clone https://github.com/whelanh/tromso_x.git
+cd tromso_x
 
-# Background build with live log tailing
-BST_FLAGS="--max-jobs $(nproc) --fetchers $(nproc)--no-interactive" just bst build oci/tromso.bst && just export
+# Build + export
+just build
 
-# Or foreground build + OCI export
-BST_FLAGS="--max-jobs $(nproc) --no-interactive" just build
+# Generate bootable VM image
+just generate-bootable-image
 
-# Push to your container registry after export
-sudo podman login ghcr.io --username whelanh
-sudo podman tag tromso:latest ghcr.io/whelanh/tromso-x:latest
-sudo podman push ghcr.io/whelanh/tromso-x:latest
+# Boot in QEMU
+just boot-vm
+```
+
+### Build (KDE Minimal — no Aurora overlay, faster)
+
+```bash
+# Build + export
+just build-kde
+
+# Generate bootable VM image  
+just generate-bootable-kde
+
+# Boot in QEMU
+just boot-vm
 ```
 
 ### Boot a VM for testing
 
 ```bash
-# Generate a bootable disk image (requires a completed build)
-just generate-bootable-image
-
-# useful command to make bootable.raw much smaller for use with Virt Manager:
-qemu-img convert -f raw -O qcow2 bootable.raw bootable.qcow2
-
-# Boot the image in QEMU
-just boot-vm
-
 # SSH in (password: aurora)
 ssh -p 2222 root@localhost
 
-# After booting with just boot-vm, SSH in and run to create a new user for graphical login:
-ssh -p 2222 root@127.0.0.1
-useradd -m -G video,render,input,audio -s /bin/zsh aurora
+# Create a user for graphical login
+useradd -m -G video,render,input,audio,wheel -s /bin/zsh aurora
 echo 'aurora:aurora' | chpasswd
 
-# Port for VNC viewer
-127.0.0.1:5900
-
+# VNC viewer
+# Connect to 127.0.0.1:5900
 ```
 
 ### Useful Justfile recipes
 
 | Recipe | Description |
 |---|---|
+| `just build` | Build Aurora image + export |
+| `just build-kde` | Build KDE Minimal image + export |
 | `just bst-build` | Background build, logs to `/var/tmp/aurora-build.log` |
-| `just build` | Foreground build + OCI export |
+| `just export` | Export Aurora image to podman (`tromso:latest`) |
+| `just export-kde` | Export KDE Minimal to podman (`tromso-kde:latest`) |
 | `just log` | Tail the build log |
-| `just generate-bootable-image` | Create a bootable raw disk image via bootc |
+| `just generate-bootable-image` | Create bootable raw disk from Aurora image |
+| `just generate-bootable-kde` | Create bootable raw disk from KDE Minimal image |
 | `just boot-vm` | Boot the raw image in QEMU (SSH on port 2222, serial on 4444) |
 | `just bst <args>` | Run any arbitrary `bst` command inside the build container |
 
-## CI/CD — CASD
-
-The CI workflow (`.github/workflows/build-buildgrid.yml`) builds `oci/tromso.bst` with
-local CASD on the runner, then pushes the result to GHCR:
-
-```
-ghcr.io/tuna-os/tromso:latest
-ghcr.io/tuna-os/tromso:<date>
-ghcr.io/tuna-os/tromso:<git-sha>
-```
-
-**How it works:**
-1. GitHub Actions runs BuildStream inside the pinned `bst2` container
-2. BuildStream uses local CASD (`~/.cache/buildstream`) with CI-tuned scheduler settings
-3. The built target is exported as an OCI image and pushed to GHCR
-
-**Cold builds** (empty CASD cache on the runner) are slower; warm runner caches significantly reduce runtime.
-
-Triggers: push to `main` (element changes), daily at 06:00 UTC, manual dispatch.
-
 ## Updating KDE Packages
 
-KDE package `.bst` definitions live in [`hanthor/kde-build-meta`](https://github.com/hanthor/kde-build-meta).
+KDE package `.bst` definitions live in [`whelanh/kde-build-meta-x`](https://github.com/whelanh/kde-build-meta-x).
 After committing there, update the junction ref in `elements/kde-build-meta.bst`:
 
 ```bash
-# 1. Commit + push kde-build-meta
-
-cd /path/to/kde-build-meta
+# 1. Commit + push kde-build-meta-x
+cd /path/to/kde-build-meta-x
 TMPDIR=/var/tmp git commit -m "..."
 git push origin master
 
 # 2. Get new SHA and hash
-
-SHA=$(git rev-parse --short=7 HEAD)
-curl -sL https://github.com/hanthor/kde-build-meta/archive/${SHA}.tar.gz | tee /tmp/kbm.tar.gz | sha256sum
+SHA=$(git rev-parse HEAD)
+SHORT=$(git rev-parse --short=7 HEAD)
+curl -sL "https://github.com/whelanh/kde-build-meta-x/archive/${SHA}.tar.gz" | tee /tmp/kbm.tar.gz | sha256sum
+BASE=$(tar tzf /tmp/kbm.tar.gz | head -1 | sed 's|/$||')
 
 # 3. Update elements/kde-build-meta.bst with new url/ref/base-dir
 
-
-# 4. Commit tromso
-
-cd /path/to/tromso
-TMPDIR=/var/tmp git commit -m "Update junction to kde-build-meta ${SHA}"
+# 4. Commit tromso_x
+cd /path/to/tromso_x
+rm -rf .bst/staged-junctions/kde-build-meta.bst
+TMPDIR=/var/tmp git commit -m "junction: bump to kde-build-meta-x ${SHORT}"
 ```
 
 See `AGENTS.md` for full conventions and workflows.
 
 ## References
 
-- **[KDE Linux](https://invent.kde.org/kde-linux/kde-linux)** — authoritative KDE package list
-- **[hanthor/kde-build-meta](https://github.com/hanthor/kde-build-meta)** — KDE .bst elements
+- **[whelanh/kde-build-meta-x](https://github.com/whelanh/kde-build-meta-x)** — KDE .bst elements
 - **[Project Bluefin dakota](https://github.com/projectbluefin/dakota)** — reference OCI/bootc implementation
 - **[gnome-build-meta](https://gitlab.gnome.org/GNOME/gnome-build-meta)** — build patterns reference
 - **[freedesktop-sdk](https://freedesktop-sdk.io/)** — base SDK
 - **[BuildStream](https://www.buildstream.build/)** — build system
-
-## ISO Builder (merged from tromso-iso)
-
----
-
-Part of the [TunaOS](https://tunaos.org) ecosystem. [Docs](https://tunaos.org) · [Contributing](CONTRIBUTING.md)
