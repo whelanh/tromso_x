@@ -252,6 +252,13 @@ config:
           f.write(merged)
       PYEOF
 
+    # Override prepare-root.conf to disable composefs. The layer may bring
+    # bootc-config.bst (junction) with enabled=maybe, which would overwrite
+    # the parent's fix (main repo stack.bst) during robust_merge.  We write
+    # the final version here after merge to ensure it wins.
+    - |
+      printf '[composefs]\nenabled = no\n\n[sysroot]\nreadonly = true\n' > "$(cat /merged-path)/usr/lib/ostree/prepare-root.conf"
+
     - |
       cd "%{install-root}"
       build-oci <<EOF

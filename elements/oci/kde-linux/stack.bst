@@ -57,6 +57,21 @@ public:
     - sh -c 'for f in /lib/modules/*/*.json /lib/modules/*/*.so /lib/modules/*/*.a; do rm -f "$f"; done'
     # Restore sudo's setuid bit in the final composed image.
     - chmod u+s /usr/bin/sudo || true
+
+    # Disable composefs: bootc creates .ostree.cfs at install time, but
+    # mount.composefs is not available in the initramfs, causing
+    # ostree-prepare-root to fall back to the non-composefs path which
+    # requires a 'sysroot' entry in the deployment.  Without composefs,
+    # ostree admin deploy creates a standard deployment with sysroot.
+    - |
+      mkdir -p /usr/lib/ostree
+      cat > /usr/lib/ostree/prepare-root.conf << 'EOF'
+      [composefs]
+      enabled = no
+
+      [sysroot]
+      readonly = true
+      EOF
     # kwin_wayland capabilities are restored in the OCI build script
     # (oci/tromso.bst / oci/kde-minimal.bst) where fakecap is available.
     # setcap fails during compose integration without CAP_SETFCAP.
