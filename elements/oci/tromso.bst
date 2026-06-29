@@ -152,91 +152,101 @@ config:
       REPOEOF
 
     # Merge parent OCI rootfs (ALL layers) with /layer into a single
-    # rootfs using cp -a (handles symlink collisions), then normalize
-    # /usr/etc → /etc so bootc sees exactly one.
+    # rootfs, then normalize /usr/etc → /etc so bootc sees exactly one.
+    # Uses robust_merge() that handles dangling symlinks and type conflicts.
     - |
-      mkdir -p /layer-merged
       python3 << 'PYEOF'
       import json, os, shutil, sys, tarfile, gzip
 
+      def _remove(path):
+          if not os.path.lexists(path):
+              return
+          if os.path.islink(path) or not os.path.isdir(path):
+              os.unlink(path)
+          else:
+              shutil.rmtree(path)
+
+      def robust_merge(src, dst):
+          if not os.path.isdir(dst):
+              os.makedirs(dst, exist_ok=True)
+          for name in os.listdir(src):
+              s = os.path.join(src, name)
+              d = os.path.join(dst, name)
+              if os.path.islink(s):
+                  _remove(d)
+                  os.symlink(os.readlink(s), d)
+              elif os.path.isdir(s):
+                  if os.path.lexists(d) and not (os.path.isdir(d) and not os.path.islink(d)):
+                      _remove(d)
+                  if not os.path.isdir(d):
+                      os.makedirs(d)
+                  robust_merge(s, d)
+              else:
+                  _remove(d)
+                  shutil.copy2(s, d)
+
       parent = "/parent"
       layer_src = "/layer"
+      merged = "/layer-merged"
+
+      if os.path.isdir(merged):
+          shutil.rmtree(merged)
+      os.makedirs(merged)
 
       if not (os.path.isdir(parent) and os.path.isfile(os.path.join(parent, "index.json"))):
           print("Parent is not an OCI layout — using /layer as-is", file=sys.stderr)
-          with open("/use-layer-as-is", "w") as f:
-              f.write("1")
-          sys.exit(0)
+          robust_merge(layer_src, merged)
+      else:
+          parent_out = "/parent-extracted"
+          if os.path.isdir(parent_out):
+              shutil.rmtree(parent_out)
+          os.makedirs(parent_out)
 
-      parent_out = "/parent-extracted"
-      if os.path.isdir(parent_out):
-          shutil.rmtree(parent_out)
-      os.makedirs(parent_out)
+          with open(os.path.join(parent, "index.json")) as f:
+              index = json.load(f)
+          mdigest = index["manifests"][0]["digest"].replace("sha256:", "")
+          with open(os.path.join(parent, "blobs", "sha256", mdigest)) as f:
+              manifest = json.load(f)
 
-      with open(os.path.join(parent, "index.json")) as f:
-          index = json.load(f)
-      mdigest = index["manifests"][0]["digest"].replace("sha256:", "")
-      with open(os.path.join(parent, "blobs", "sha256", mdigest)) as f:
-          manifest = json.load(f)
-
-      for layer in manifest["layers"]:
-          ldigest = layer["digest"].replace("sha256:", "")
-          blob = os.path.join(parent, "blobs", "sha256", ldigest)
-          mt = layer.get("mediaType", "")
-          if os.path.isdir(blob):
-              for name in os.listdir(blob):
-                  src = os.path.join(blob, name)
-                  dst = os.path.join(parent_out, name)
-                  if os.path.isdir(src):
-                      shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True)
-                  else:
-                      shutil.copy2(src, dst)
-          elif "gzip" in mt:
-              with gzip.open(blob) as gz:
-                  with tarfile.open(fileobj=gz) as tar:
+          for layer in manifest["layers"]:
+              ldigest = layer["digest"].replace("sha256:", "")
+              blob = os.path.join(parent, "blobs", "sha256", ldigest)
+              mt = layer.get("mediaType", "")
+              if os.path.isdir(blob):
+                  for name in os.listdir(blob):
+                      s = os.path.join(blob, name)
+                      d = os.path.join(parent_out, name)
+                      if os.path.islink(s):
+                          if os.path.lexists(d):
+                              _remove(d)
+                          os.symlink(os.readlink(s), d)
+                      elif os.path.isdir(s):
+                          shutil.copytree(s, d, symlinks=True, dirs_exist_ok=True)
+                      else:
+                          shutil.copy2(s, d)
+              elif "gzip" in mt:
+                  with gzip.open(blob) as gz:
+                      with tarfile.open(fileobj=gz) as tar:
+                          tar.extractall(parent_out)
+              else:
+                  with tarfile.open(blob) as tar:
                       tar.extractall(parent_out)
-          else:
-              with tarfile.open(blob) as tar:
-                  tar.extractall(parent_out)
-      PYEOF
-      if [ -f /use-layer-as-is ]; then
-        cp -a /layer/. /layer-merged/
-      else
-        cp -a /parent-extracted/. /layer-merged/
-        rm -rf /parent-extracted
-        cp -a /layer/. /layer-merged/
-      fi
 
-    # Normalize /usr/etc → /etc on the merged rootfs
-    - |
-      python3 << 'PYEOF'
-      import os, shutil, sys
+          robust_merge(parent_out, merged)
+          shutil.rmtree(parent_out)
+          robust_merge(layer_src, merged)
 
-      merged = "/layer-merged"
       usr_etc = os.path.join(merged, "usr", "etc")
       etc_dir = os.path.join(merged, "etc")
-
       if os.path.isdir(usr_etc):
-          os.makedirs(etc_dir, exist_ok=True)
-          for name in os.listdir(usr_etc):
-              src = os.path.join(usr_etc, name)
-              dst = os.path.join(etc_dir, name)
-              if os.path.isdir(src):
-                  shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True)
-              else:
-                  shutil.copy2(src, dst)
+          robust_merge(usr_etc, etc_dir)
           shutil.rmtree(usr_etc)
           print("Merged rootfs: /usretc migrated to /etc", file=sys.stderr)
       else:
           print("Merged rootfs: no /usr/etc present", file=sys.stderr)
 
-      # Remove parent OCI symlinks / directories from merged rootfs
       for d in ("ostree", "sysroot"):
-          p = os.path.join(merged, d)
-          if os.path.islink(p) or os.path.isfile(p):
-              os.unlink(p)
-          elif os.path.isdir(p):
-              shutil.rmtree(p, ignore_errors=True)
+          _remove(os.path.join(merged, d))
 
       with open("/merged-path", "w") as f:
           f.write(merged)
