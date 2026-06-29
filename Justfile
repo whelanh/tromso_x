@@ -265,8 +265,14 @@ export-kde:
     # if rootless podman was not used.
     if [ -z "$SUDO_CMD" ]; then
         echo "==> Copying image to rootful storage for bootc..."
-        podman save localhost/tromso-kde:latest | sudo podman load 2>/dev/null || \
-            echo "==> Warning: Could not copy to rootful storage (sudo password required)."
+        if podman save localhost/tromso-kde:latest | sudo podman load; then
+            echo "==> Rootful copy succeeded."
+        else
+            echo "==> ERROR: Could not copy image to rootful storage." >&2
+            echo "    Run this manually before 'just generate-bootable-kde':" >&2
+            echo "    podman save localhost/tromso-kde:latest | sudo podman load" >&2
+            exit 1
+        fi
     fi
 
 [group('test')]
@@ -359,15 +365,19 @@ generate-bootable-image $base_dir=base_dir $filesystem=filesystem:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    if ! sudo podman image exists "{{image_name}}:{{image_tag}}"; then
-        if podman image exists "{{image_name}}:{{image_tag}}"; then
-            echo "==> Image found in rootless storage; copying to rootful for bootc..."
-            podman save "{{image_name}}:{{image_tag}}" | sudo podman load
-        else
-            echo "ERROR: Image '{{image_name}}:{{image_tag}}' not found in podman." >&2
-            echo "Run 'just build' first to build and export the OCI image." >&2
-            exit 1
-        fi
+    # Always refresh rootful storage from rootless, so bootc gets the latest image.
+    # The `sudo podman image exists` check is not enough — it passes even when
+    # rootful has a stale image from a previous build that was never updated
+    # (e.g. because `export-kde` silently failed to copy to rootful).
+    if podman image exists "{{image_name}}:{{image_tag}}"; then
+        echo "==> Refreshing rootful storage with latest image..."
+        podman save "{{image_name}}:{{image_tag}}" | sudo podman load
+    elif sudo podman image exists "{{image_name}}:{{image_tag}}"; then
+        echo "==> Using existing rootful image (rootless image not found)"
+    else
+        echo "ERROR: Image '{{image_name}}:{{image_tag}}' not found in podman." >&2
+        echo "Run 'just build' first to build and export the OCI image." >&2
+        exit 1
     fi
 
     if [ ! -e "${base_dir}/bootable.raw" ] ; then
