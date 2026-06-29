@@ -12,7 +12,6 @@ Last updated: 2026-06-29
 - **plasma-login-manager** login screen works — SDDM fully replaced
 - **Application launcher (kickoff/kicker)** shows all installed apps (FIXED 2026-06-24)
 - **KRunner** finds installed apps and newly-installed Flatpaks (FIXED 2026-06-24)
-- **Discover connects to Flathub** and shows remote apps
 - **Discover "Installed" tab** shows Flatpaks (system package listing not available on bootc — see Known Issues)
 - **Panel icons** display correctly — no blank/white icons (FIXED 2026-06-24)
 - **Non-root users can install Flatpak apps** via Discover or CLI (FIXED 2026-06-24)
@@ -88,6 +87,20 @@ can be installed but may fail at runtime. May need `kernel.unprivileged_userns_c
 `Could not unmount revokefs-fuse` warnings appear during flatpak install but
 do not prevent successful installation. The warning is cosmetic.
 
+#### 4. Flathub not auto-configured in OCI (FIXED 2026-06-29)
+After the PackageKit revert, Discover showed "No Flatpak sources" on a fresh
+bootc deployment because Flathub was only configured by the ISO installer
+(`install-flatpaks.sh`), not in the base OCI image. Fixed by shipping
+`/etc/flatpak/remotes.d/flathub.flatpakrepo` directly in the image.
+
+#### 5. bootc deployment: "Tree contains both /etc and /usr/etc" (FIXED 2026-06-29)
+freedesktop-sdk base layers use the OSTree convention `/usr/etc` while Dakota
+convention layers use `/etc`. When bootc merges the OCI layers, both directories
+exist, triggering a deployment error. Fixed by extracting the parent OCI rootfs
+in the build step, migrating parent `/usr/etc` content to `/layer/etc`, and
+adding an opaque whiteout (`/.wh..wh..opq`) in `/layer/usr/etc/` to hide the
+parent's directory in the merged view.
+
 ## TODO
 
 ### PackageKit Removal (2026-06-28)
@@ -132,6 +145,9 @@ to stable releases was attempted but abandoned because:
 | `.github/workflows/update-refs.yml` | Updated tracking description | 2026-06-23 |
 | `Justfile` | Added build-kde, export-kde, generate-bootable-kde recipes | 2026-06-24 |
 | `Justfile` | SUDO_CMD uses podman check (enables rootless), rootless→rootful image copy, policy.json mount, HOME=/root for bootc | 2026-06-28 |
+| `elements/oci/kde-linux/image.bst` | Parent OCI rootfs extraction + /usr/etc → /etc migration with opaque whiteout | 2026-06-29 |
+| `elements/oci/tromso.bst` | Parent OCI rootfs extraction + /usr/etc → /etc migration, Flathub repo config | 2026-06-29 |
+| `elements/oci/kde-minimal.bst` | Parent OCI rootfs extraction + /usr/etc → /etc migration, Flathub repo config | 2026-06-29 |
 
 ### kde-build-meta-x Changes
 

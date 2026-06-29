@@ -54,6 +54,81 @@ config:
       cp -a /layer/usr/etc/. /layer/etc/
       rm -rf /layer/usr/etc
     fi
+  # Also migrate parent OCI's /usr/etc (from freedesktop-sdk OSTree convention)
+  # to /layer/etc and add opaque whiteout so bootc doesn't see both.
+  - |
+    python3 << 'PYEOF'
+    import json, os, sys, shutil, tempfile
+
+    parent = "/parent"
+    layer = "/layer"
+
+    if not (os.path.isdir(parent) and os.path.isfile(os.path.join(parent, "index.json"))):
+        print("No index.json in parent OCI layout — skipping")
+        sys.exit(0)
+
+    try:
+        with open(os.path.join(parent, "index.json")) as f:
+            index = json.load(f)
+    except Exception as e:
+        print(f"Cannot read parent index.json: {e}")
+        sys.exit(0)
+
+    try:
+        mref = index["manifests"][0]["digest"]
+        mdigest = mref.replace("sha256:", "")
+        with open(os.path.join(parent, "blobs", "sha256", mdigest)) as f:
+            manifest = json.load(f)
+    except Exception as e:
+        print(f"Cannot read parent manifest: {e}")
+        sys.exit(0)
+
+    last = manifest["layers"][-1]
+    ldigest = last["digest"].replace("sha256:", "")
+    blob = os.path.join(parent, "blobs", "sha256", ldigest)
+
+    root = tempfile.mkdtemp()
+    try:
+        if os.path.isdir(blob):
+            for name in os.listdir(blob):
+                src = os.path.join(blob, name)
+                dst = os.path.join(root, name)
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(src, dst)
+        else:
+            import tarfile, gzip
+            mt = last.get("mediaType", "")
+            if "gzip" in mt:
+                with gzip.open(blob) as gz:
+                    with tarfile.open(fileobj=gz) as tar:
+                        tar.extractall(root)
+            else:
+                with tarfile.open(blob) as tar:
+                    tar.extractall(root)
+
+        parent_usr_etc = os.path.join(root, "usr", "etc")
+        if os.path.isdir(parent_usr_etc):
+            layer_etc = os.path.join(layer, "etc")
+            layer_usr_etc = os.path.join(layer, "usr", "etc")
+            os.makedirs(layer_etc, exist_ok=True)
+            for name in os.listdir(parent_usr_etc):
+                src = os.path.join(parent_usr_etc, name)
+                dst = os.path.join(layer_etc, name)
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(src, dst)
+            os.makedirs(layer_usr_etc, exist_ok=True)
+            with open(os.path.join(layer_usr_etc, ".wh..wh..opq"), "w") as f:
+                pass
+            print("Parent /usretc migrated to /layer/etc with opaque whiteout")
+        else:
+            print("No /usr/etc in parent; nothing to migrate")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    PYEOF
 
   - |
     cd "%{install-root}"
