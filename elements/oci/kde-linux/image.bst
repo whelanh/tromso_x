@@ -45,30 +45,14 @@ config:
   - |
     glib-compile-schemas /layer/usr/share/glib-2.0/schemas || true
 
-  # Normalize /layer to match the parent image's /etc vs /usr/etc
-  # convention.  bootc requires exactly one of them in the merged OCI
-  # image; if the parent has /etc/ and the layer has /usr/etc/ the
-  # merged result contains both and deployment fails.  When the parent
-  # has neither, default to the OSTree standard: /usr/etc/.
+  # bootc requires exactly one of /etc or /usr/etc in the merged image.
+  # Always use /etc (Dakota convention). Merge any /usr/etc content from
+  # the layer into /etc, then remove /usr/etc.
   - |
-    if [ -d /parent/etc ] && [ -d /parent/usr/etc ]; then
-      echo "ERROR: Parent image has both /etc and /usr/etc" >&2
-      exit 1
-    fi
-    if [ -d /parent/usr/etc ] || ( [ ! -d /parent/etc ] && [ ! -d /parent/usr/etc ] ); then
-      # Parent uses /usr/etc (or has neither) — use /usr/etc convention
-      if [ -d /layer/etc ]; then
-        mkdir -p /layer/usr/etc
-        cp -a /layer/etc/. /layer/usr/etc/
-        rm -rf /layer/etc
-      fi
-    elif [ -d /parent/etc ]; then
-      # Parent uses /etc — match it
-      if [ -d /layer/usr/etc ]; then
-        mkdir -p /layer/etc
-        cp -a /layer/usr/etc/. /layer/etc/
-        rm -rf /layer/usr/etc
-      fi
+    if [ -d /layer/usr/etc ]; then
+      mkdir -p /layer/etc
+      cp -a /layer/usr/etc/. /layer/etc/
+      rm -rf /layer/usr/etc
     fi
 
   - |

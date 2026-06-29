@@ -53,15 +53,13 @@ config:
       # Enable flatpak-system-helper so Discover can interact with Flatpak
       systemctl --root=/layer enable flatpak-system-helper.service || true
 
-    # The OCI image chain uses /usr/etc/ (the OSTree standard).  On
-    # bootc-deployed systems /etc/ at runtime is a tmpfs; all system
-    # default configs must live in /usr/etc/.  Before build-oci we check
-    # the parent and normalize the layer to match — this avoids the
-    # "Tree contains both /etc and /usr/etc" deployment error.
+    # bootc requires exactly one of /etc or /usr/etc in the merged image.
+    # Always use /etc (Dakota convention). Merge any /usr/etc content from
+    # the layer into /etc, then remove /usr/etc.
     - |
       # The shadow package seeds empty subordinate ID files; populate them
       # so rootless podman in the greeter session gets a real range.
-      for dir in /layer/usr/etc /layer/usr/share/factory/etc; do
+      for dir in /layer/etc /layer/usr/share/factory/etc; do
         mkdir -p "$dir"
         printf '%s\n' 'plasmalogin:100000:65536' >"$dir/subuid"
         printf '%s\n' 'plasmalogin:100000:65536' >"$dir/subgid"
@@ -79,26 +77,14 @@ config:
       # Flatpak requires fusermount3 to have setuid so non-root users
       # can mount/unmount FUSE filesystems for app installation.
       chmod u+s /layer/usr/bin/fusermount3 || true
-      # Refresh linker cache in the composed rootfs so the login manager can
-      # resolve Qt6
-      # libraries installed under /usr/lib at first boot.
-      # Qt6 core libs live in /parent/usr/lib (KDE Linux base image); chrooting
-      # only into /layer misses them.  Mount parent+layer as an overlay so
-      # ldconfig sees the full merged /usr/lib and writes the correct cache into
-      # /layer/etc/ld.so.cache (overlay upper-dir write-back).
-      if [ ! -f /layer/usr/etc/ld.so.conf ]; then
-        printf 'include /etc/ld.so.conf.d/*.conf\n' > /layer/usr/etc/ld.so.conf
+      # Refresh linker cache in the layer so the login manager can resolve
+      # Qt6 libraries at first boot.  Use ldconfig -r (Dakota convention)
+      # which scans the layer rootfs and writes /etc/ld.so.cache.
+      if [ ! -f /layer/etc/ld.so.conf ]; then
+        printf 'include /etc/ld.so.conf.d/*.conf\n' > /layer/etc/ld.so.conf
       fi
-      mkdir -p /ld-work /ld-merged
-      if timeout 30 mount -t overlay overlay \
-           -o "lowerdir=/parent,upperdir=/layer,workdir=/ld-work" \
-           /ld-merged 2>/dev/null; then
-        timeout 60 chroot /ld-merged ldconfig || true
-        umount /ld-merged || true
-      else
-        timeout 60 chroot /layer ldconfig || true
-      fi
-      rm -rf /ld-merged /ld-work 2>/dev/null || true
+      ldconfig -r /layer -f /layer/etc/ld.so.conf 2>/dev/null || \
+        chroot /layer ldconfig 2>/dev/null || true
     - |
       mkdir -p /fc-work /fc-merged
       if timeout 30 mount -t overlay overlay \
@@ -113,11 +99,11 @@ config:
     # Extract CA certificates in the target layer instead of the build sandbox.
     # Since chroot is not permitted in this sandbox, and prepare-image.sh
     # already ran update-ca-trust inside the sandbox root, we can just copy
-    # the generated certificates from the sandbox's /etc to the layer's /usr/etc.
+    # the generated certificates from the sandbox's /etc to the layer.
     - |
       if [ -d /etc/pki/ca-trust/extracted ]; then
-        mkdir -p /layer/usr/etc/pki/ca-trust/extracted
-        cp -a /etc/pki/ca-trust/extracted/. /layer/usr/etc/pki/ca-trust/extracted/
+        mkdir -p /layer/etc/pki/ca-trust/extracted
+        cp -a /etc/pki/ca-trust/extracted/. /layer/etc/pki/ca-trust/extracted/
       fi
     - |
       # Force an explicit font family in the Breeze QML that renders the
@@ -154,28 +140,13 @@ config:
       fi
 
     - |
-      # Normalize /layer to match the parent image's /etc vs /usr/etc
-      # convention.  bootc requires exactly one of them in the merged OCI
-      # image.  When the parent has neither, default to the OSTree standard:
-      # /usr/etc/.
-      if [ -d /parent/etc ] && [ -d /parent/usr/etc ]; then
-        echo "ERROR: Parent image has both /etc and /usr/etc" >&2
-        exit 1
-      fi
-      if [ -d /parent/usr/etc ] || ( [ ! -d /parent/etc ] && [ ! -d /parent/usr/etc ] ); then
-        # Parent uses /usr/etc (or has neither) — use /usr/etc convention
-        if [ -d /layer/etc ]; then
-          mkdir -p /layer/usr/etc
-          cp -a /layer/etc/. /layer/usr/etc/
-          rm -rf /layer/etc
-        fi
-      elif [ -d /parent/etc ]; then
-        # Parent uses /etc — match it
-        if [ -d /layer/usr/etc ]; then
-          mkdir -p /layer/etc
-          cp -a /layer/usr/etc/. /layer/etc/
-          rm -rf /layer/usr/etc
-        fi
+      # bootc requires exactly one of /etc or /usr/etc in the merged image.
+      # Always use /etc (Dakota convention). Merge any /usr/etc content from
+      # the layer into /etc, then remove /usr/etc.
+      if [ -d /layer/usr/etc ]; then
+        mkdir -p /layer/etc
+        cp -a /layer/usr/etc/. /layer/etc/
+        rm -rf /layer/usr/etc
       fi
 
     - |

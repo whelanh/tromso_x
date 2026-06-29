@@ -1,6 +1,6 @@
 # Build Status & Next Steps
 
-Last updated: 2026-06-24
+Last updated: 2026-06-29
 
 ## Current State
 
@@ -13,7 +13,7 @@ Last updated: 2026-06-24
 - **Application launcher (kickoff/kicker)** shows all installed apps (FIXED 2026-06-24)
 - **KRunner** finds installed apps and newly-installed Flatpaks (FIXED 2026-06-24)
 - **Discover connects to Flathub** and shows remote apps
-- **Discover "Installed" tab** shows system apps (FIXED 2026-06-24)
+- **Discover "Installed" tab** shows Flatpaks (system package listing not available on bootc — see Known Issues)
 - **Panel icons** display correctly — no blank/white icons (FIXED 2026-06-24)
 - **Non-root users can install Flatpak apps** via Discover or CLI (FIXED 2026-06-24)
 - **Network, System Settings, Konsole** functional
@@ -77,16 +77,29 @@ new runtime dependencies. The plasmoids are compiled as `.so` plugins at
 
 ### Known Issues
 
-#### 1. Unprivileged User Namespaces (UNRESOLVED)
+#### 1. No System Package Management (bootc constraint)
+PackageKit was added to enable system package listing in Discover's "Installed"
+tab but was removed because PackageKit has no real package manager backend on a
+bootc-based immutable system — updates come via `bootc upgrade` pulling a new
+OCI image. The dummy backend crashed the daemon at startup. Discover works for
+Flatpaks but does not show RPM/system packages. This is standard behaviour for
+bootc-based atomic systems (e.g., Fedora Silverblue with rpm-ostree).
+
+#### 2. Unprivileged User Namespaces (UNRESOLVED)
 Flatpak `run` shows "CanCreateUserNamespace() clone() failure: EPERM". This
 means unprivileged user namespaces are restricted on this kernel. Flatpak apps
 can be installed but may fail at runtime. May need `kernel.unprivileged_userns_clone=1`.
 
-#### 2. Fusermount3 Warnings (COSMETIC)
+#### 3. Fusermount3 Warnings (COSMETIC)
 `Could not unmount revokefs-fuse` warnings appear during flatpak install but
 do not prevent successful installation. The warning is cosmetic.
 
 ## TODO
+
+### PackageKit Removal (2026-06-28)
+PackageKit v1.3.6 and its Qt6 bindings were added to enable Discover's system
+package backend, but the dummy backend crashed on bootc (no real package manager
+available). The elements were removed. Discover's Flatpak backend is unaffected.
 
 ### SELinux Integration
 The image currently runs without mandatory access control. freedesktop-sdk
@@ -125,6 +138,7 @@ to stable releases was attempted but abandoned because:
 | `elements/tromso/deps-minimal.bst` | Minimal deps for kde-minimal | 2026-06-24 |
 | `.github/workflows/update-refs.yml` | Updated tracking description | 2026-06-23 |
 | `Justfile` | Added build-kde, export-kde, generate-bootable-kde recipes | 2026-06-24 |
+| `Justfile` | SUDO_CMD uses podman check (enables rootless), rootless→rootful image copy, policy.json mount, HOME=/root for bootc | 2026-06-28 |
 
 ### kde-build-meta-x Changes
 
@@ -133,6 +147,9 @@ to stable releases was attempted but abandoned because:
 | `plasma-desktop.bst` BUILD_X11=ON | Enable kickoff/kicker plasmoid build |
 | `plasma-desktop.bst` / `plasma-workspace.bst` url: github:KDE | KDE GitHub mirror (invent.kde.org unreachable from BST container) |
 | `plasma-login-manager.bst` xorg-lib-xcursor build-dep | v6.7.1 libklookandfeel requires Xcursor at link time |
+| `core-deps/packagekit.bst` (added then removed) | PackageKit v1.3.6 — added for Discover PK backend, removed due to dummy backend crash on bootc |
+| `core-deps/packagekit-qt6.bst` (added then removed) | PackageKit Qt6 bindings — added for Discover PK backend, removed with PackageKit |
+| `discover.bst` | Added then removed BUILD_PackageKitBackend=ON and packagekit-qt6 dep |
 
 ## Build & Test Commands
 
