@@ -144,7 +144,7 @@ config:
         print("Merged rootfs: no /usr/etc present", file=sys.stderr)
 
     # Remove parent OCI symlinks / directories from merged rootfs
-    for d in ("ostree", "sysroot"):
+    for d in ("ostree",):
         p = os.path.join(merged, d)
         _remove(p)
 

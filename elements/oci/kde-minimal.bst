@@ -245,7 +245,7 @@ config:
       else:
           print("Merged rootfs: no /usr/etc present", file=sys.stderr)
 
-      for d in ("ostree", "sysroot"):
+      for d in ("ostree",):
           _remove(os.path.join(merged, d))
 
       with open("/merged-path", "w") as f:
