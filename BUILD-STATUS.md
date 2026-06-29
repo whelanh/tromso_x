@@ -13,7 +13,6 @@ Last updated: 2026-06-24
 - **Application launcher (kickoff/kicker)** shows all installed apps (FIXED 2026-06-24)
 - **KRunner** finds installed apps and newly-installed Flatpaks (FIXED 2026-06-24)
 - **Discover connects to Flathub** and shows remote apps
-- **Discover "Installed" tab** shows system apps (FIXED 2026-06-24)
 - **Panel icons** display correctly — no blank/white icons (FIXED 2026-06-24)
 - **Non-root users can install Flatpak apps** via Discover or CLI (FIXED 2026-06-24)
 - **Network, System Settings, Konsole** functional
@@ -23,28 +22,22 @@ Last updated: 2026-06-24
 
 ### Fixed Issues
 
-#### 1. OCI /etc vs /usr/etc Convention (FIXED 2026-06-23)
-bootc requires exactly one of `/etc` or `/usr/etc` in the OCI image. Previously
-`kde-linux/image.bst` and `tromso.bst` used opposite conventions, causing "Tree
-contains both /etc and /usr/etc" deployment errors. Fixed with parent-aware
-normalization in both image builders that matches each layer to its parent.
-
-#### 2. Sudo setuid (FIXED 2026-06-23)
+#### 1. Sudo setuid (FIXED 2026-06-23)
 The compose step strips the setuid bit from `/usr/bin/sudo`. Added `chmod u+s`
 in the OCI build script as a safety net.
 
-#### 3. systemd-homed D-Bus Activation (FIXED 2026-06-23)
+#### 2. systemd-homed D-Bus Activation (FIXED 2026-06-23)
 `systemd-homed.service` was masked but its D-Bus activation file
 (`dbus-org.freedesktop.home1.service`) was still active, causing accountsservice
 to trip over a broken home1 activation during user enumeration. Masked all homed
 services and their sub-services.
 
-#### 4. CA Certificates (FIXED 2026-06-23)
+#### 3. CA Certificates (FIXED 2026-06-23)
 CA certs were installed to `/etc/pki/` which bootc's tmpfs overlay hides at runtime.
 Fixed by installing certs to `/usr/etc/pki/` and ensuring the `/usr/etc/` convention
 is used consistently.
 
-#### 5. Launcher, KRunner, Discover Empty — Missing `/etc/xdg` in XDG_CONFIG_DIRS (FIXED 2026-06-24)
+#### 4. Launcher, KRunner, Discover Empty — Missing `/etc/xdg` in XDG_CONFIG_DIRS (FIXED 2026-06-24)
 **Root cause**: `kde-settings.sh` was overriding `XDG_CONFIG_DIRS` without including
 `/etc/xdg`. This prevented the XDG menu system from finding `applications.menu`,
 causing the launcher, KRunner, and Discover's "Installed" tab to show nothing.
@@ -59,7 +52,7 @@ and `/etc/xdg` wasn't in that path. The host comparison revealed the discrepancy
 **Also fixed**: `KDEDIRS=/usr` and `KDE_FULL_SESSION=true` added to match
 working KDE hosts.
 
-#### 6. Flatpak User Install (FIXED 2026-06-24)
+#### 5. Flatpak User Install (FIXED 2026-06-24)
 Two issues prevented non-root users from installing Flatpaks:
 1. **Polkit**: the default flatpak polkit rule only covers `app-install`,
    `runtime-install`, etc. — not internal operations `Deploy` and `GetRevokefsFd`.
@@ -69,7 +62,7 @@ Two issues prevented non-root users from installing Flatpaks:
    on fusermount3 so non-root users can mount/unmount FUSE filesystems during
    flatpak installation.
 
-#### 7. plasma-desktop X11 Build (FIXED 2026-06-24)
+#### 6. plasma-desktop X11 Build (FIXED 2026-06-24)
 `BUILD_X11=OFF` was disabling the entire kickoff/kicker/taskmanager plasmoid build.
 Changed to `ON`; the X11 headers were already in build-depends, so this added no
 new runtime dependencies. The plasmoids are compiled as `.so` plugins at
@@ -119,7 +112,6 @@ to stable releases was attempted but abandoned because:
 | File | Change | Date |
 |------|--------|------|
 | `elements/oci/tromso.bst` | Parent-aware /etc normalization, sudo setuid, fusermount3 setuid | 2026-06-23/24 |
-| `elements/oci/kde-linux/image.bst` | Parent-aware /etc normalization (matching) | 2026-06-23 |
 | `elements/tromso/system-config.bst` | /etc/xdg in XDG_CONFIG_DIRS, KDEDIRS, KDE_FULL_SESSION, homed masks, flatpak polkit rule, LANG env | 2026-06-23/24 |
 | `elements/oci/kde-minimal.bst` | New minimal KDE-only build target | 2026-06-24 |
 | `elements/tromso/deps-minimal.bst` | Minimal deps for kde-minimal | 2026-06-24 |
