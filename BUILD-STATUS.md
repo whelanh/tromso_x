@@ -12,7 +12,7 @@ Last updated: 2026-06-29
 - **plasma-login-manager** login screen works — SDDM fully replaced
 - **Application launcher (kickoff/kicker)** shows all installed apps (FIXED 2026-06-24)
 - **KRunner** finds installed apps and newly-installed Flatpaks (FIXED 2026-06-24)
-- **Discover "Installed" tab** shows Flatpaks (system package listing not available on bootc — see Known Issues)
+- **Discover "Installed" tab** shows Flatpaks
 - **Panel icons** display correctly — no blank/white icons (FIXED 2026-06-24)
 - **Non-root users can install Flatpak apps** via Discover or CLI (FIXED 2026-06-24)
 - **Network, System Settings, Konsole** functional
@@ -70,43 +70,35 @@ new runtime dependencies. The plasmoids are compiled as `.so` plugins at
 
 ### Known Issues
 
-#### 1. No System Package Management (bootc constraint)
-PackageKit was added to enable system package listing in Discover's "Installed"
-tab but was removed because PackageKit has no real package manager backend on a
-bootc-based immutable system — updates come via `bootc upgrade` pulling a new
-OCI image. The dummy backend crashed the daemon at startup. Discover works for
-Flatpaks but does not show RPM/system packages. This is standard behaviour for
-bootc-based atomic systems (e.g., Fedora Silverblue with rpm-ostree).
-
-#### 2. Unprivileged User Namespaces (UNRESOLVED)
+#### 1. Unprivileged User Namespaces (UNRESOLVED)
 Flatpak `run` shows "CanCreateUserNamespace() clone() failure: EPERM". This
 means unprivileged user namespaces are restricted on this kernel. Flatpak apps
 can be installed but may fail at runtime. May need `kernel.unprivileged_userns_clone=1`.
 
-#### 3. Fusermount3 Warnings (COSMETIC)
+#### 3. Fusermount3 Warnings
 `Could not unmount revokefs-fuse` warnings appear during flatpak install but
 do not prevent successful installation. The warning is cosmetic.
 
 #### 4. Flathub not auto-configured in OCI (FIXED 2026-06-29)
-After the PackageKit revert, Discover showed "No Flatpak sources" on a fresh
-bootc deployment because Flathub was only configured by the ISO installer
-(`install-flatpaks.sh`), not in the base OCI image. Fixed by shipping
-`/etc/flatpak/remotes.d/flathub.flatpakrepo` directly in the image.
+Discover showed "No Flatpak sources" on a fresh bootc deployment because Flathub
+was only configured by the ISO installer (`install-flatpaks.sh`), not in the
+base OCI image. Fixed by shipping `/etc/flatpak/remotes.d/flathub.flatpakrepo`
+directly in the image.
 
 #### 5. bootc deployment: "Tree contains both /etc and /usr/etc" (FIXED 2026-06-29)
-freedesktop-sdk base layers use the OSTree convention `/usr/etc` while Dakota
-convention layers use `/etc`. When bootc merges the OCI layers, both directories
-exist, triggering a deployment error. Fixed by extracting the parent OCI rootfs
-in the build step, migrating parent `/usr/etc` content to `/layer/etc`, and
-adding an opaque whiteout (`/.wh..wh..opq`) in `/layer/usr/etc/` to hide the
-parent's directory in the merged view.
+**Root cause (corrected)**: `oci/kde-linux/image.bst` used multi-layer OCI with
+`platform/image.bst` as parent (which has `/usr/etc`, OSTree convention) and
+`filesystem.bst` as the added layer (which has `/etc`). Normalization only
+touched the added layer, not the parent's lower layer. Extracting the parent's
+*last* layer to check for `/usr/etc` missed content from *earlier* layers.
+
+**Fix**: All OCI image builders (`image.bst`, `tromso.bst`, `kde-minimal.bst`)
+now produce **single-layer** OCI images (Dakota's approach). The parent OCI's
+rootfs is extracted from ALL layers, merged with the `/layer` content, then
+normalized to `/etc` before `build-oci` creates a single-layer image with no
+parent. This guarantees no `/usr/etc` exists anywhere in the final image.
 
 ## TODO
-
-### PackageKit Removal (2026-06-28)
-PackageKit v1.3.6 and its Qt6 bindings were added to enable Discover's system
-package backend, but the dummy backend crashed on bootc (no real package manager
-available). The elements were removed. Discover's Flatpak backend is unaffected.
 
 ### SELinux Integration
 The image currently runs without mandatory access control. freedesktop-sdk
@@ -145,9 +137,9 @@ to stable releases was attempted but abandoned because:
 | `.github/workflows/update-refs.yml` | Updated tracking description | 2026-06-23 |
 | `Justfile` | Added build-kde, export-kde, generate-bootable-kde recipes | 2026-06-24 |
 | `Justfile` | SUDO_CMD uses podman check (enables rootless), rootless→rootful image copy, policy.json mount, HOME=/root for bootc | 2026-06-28 |
-| `elements/oci/kde-linux/image.bst` | Parent OCI rootfs extraction + /usr/etc → /etc migration with opaque whiteout | 2026-06-29 |
-| `elements/oci/tromso.bst` | Parent OCI rootfs extraction + /usr/etc → /etc migration, Flathub repo config | 2026-06-29 |
-| `elements/oci/kde-minimal.bst` | Parent OCI rootfs extraction + /usr/etc → /etc migration, Flathub repo config | 2026-06-29 |
+| `elements/oci/kde-linux/image.bst` | Single-layer OCI (Dakota approach): extract all parent layers, merge, normalize to /etc | 2026-06-29 |
+| `elements/oci/tromso.bst` | Single-layer OCI + Flathub repo config | 2026-06-29 |
+| `elements/oci/kde-minimal.bst` | Single-layer OCI + Flathub repo config | 2026-06-29 |
 
 ### kde-build-meta-x Changes
 
@@ -156,9 +148,6 @@ to stable releases was attempted but abandoned because:
 | `plasma-desktop.bst` BUILD_X11=ON | Enable kickoff/kicker plasmoid build |
 | `plasma-desktop.bst` / `plasma-workspace.bst` url: github:KDE | KDE GitHub mirror (invent.kde.org unreachable from BST container) |
 | `plasma-login-manager.bst` xorg-lib-xcursor build-dep | v6.7.1 libklookandfeel requires Xcursor at link time |
-| `core-deps/packagekit.bst` (added then removed) | PackageKit v1.3.6 — added for Discover PK backend, removed due to dummy backend crash on bootc |
-| `core-deps/packagekit-qt6.bst` (added then removed) | PackageKit Qt6 bindings — added for Discover PK backend, removed with PackageKit |
-| `discover.bst` | Added then removed BUILD_PackageKitBackend=ON and packagekit-qt6 dep |
 
 ## Build & Test Commands
 

@@ -45,89 +45,82 @@ config:
   - |
     glib-compile-schemas /layer/usr/share/glib-2.0/schemas || true
 
-  # bootc requires exactly one of /etc or /usr/etc in the merged image.
-  # Always use /etc (Dakota convention). Merge any /usr/etc content from
-  # the layer into /etc, then remove /usr/etc.
-  - |
-    if [ -d /layer/usr/etc ]; then
-      mkdir -p /layer/etc
-      cp -a /layer/usr/etc/. /layer/etc/
-      rm -rf /layer/usr/etc
-    fi
-  # Also migrate parent OCI's /usr/etc (from freedesktop-sdk OSTree convention)
-  # to /layer/etc and add opaque whiteout so bootc doesn't see both.
+  # Merge parent OCI rootfs (ALL layers) with /layer into a single
+  # rootfs, then normalize /usr/etc → /etc so bootc sees exactly one.
+  # This follows Dakota's single-layer approach and avoids the
+  # "Tree contains both /etc and /usr/etc" deployment error.
   - |
     python3 << 'PYEOF'
-    import json, os, sys, shutil, tempfile
+    import json, os, shutil, sys, tarfile, gzip
 
     parent = "/parent"
-    layer = "/layer"
+    layer_src = "/layer"
+    merged = "/layer-merged"
+
+    if os.path.isdir(merged):
+        shutil.rmtree(merged)
+    os.makedirs(merged)
 
     if not (os.path.isdir(parent) and os.path.isfile(os.path.join(parent, "index.json"))):
-        print("No index.json in parent OCI layout — skipping")
-        sys.exit(0)
-
-    try:
+        print("Parent is not an OCI layout — using /layer as-is", file=sys.stderr)
+        merged = layer_src
+    else:
         with open(os.path.join(parent, "index.json")) as f:
             index = json.load(f)
-    except Exception as e:
-        print(f"Cannot read parent index.json: {e}")
-        sys.exit(0)
-
-    try:
-        mref = index["manifests"][0]["digest"]
-        mdigest = mref.replace("sha256:", "")
+        mdigest = index["manifests"][0]["digest"].replace("sha256:", "")
         with open(os.path.join(parent, "blobs", "sha256", mdigest)) as f:
             manifest = json.load(f)
-    except Exception as e:
-        print(f"Cannot read parent manifest: {e}")
-        sys.exit(0)
 
-    last = manifest["layers"][-1]
-    ldigest = last["digest"].replace("sha256:", "")
-    blob = os.path.join(parent, "blobs", "sha256", ldigest)
-
-    root = tempfile.mkdtemp()
-    try:
-        if os.path.isdir(blob):
-            for name in os.listdir(blob):
-                src = os.path.join(blob, name)
-                dst = os.path.join(root, name)
-                if os.path.isdir(src):
-                    shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True)
-                else:
-                    shutil.copy2(src, dst)
-        else:
-            import tarfile, gzip
-            mt = last.get("mediaType", "")
-            if "gzip" in mt:
+        for layer in manifest["layers"]:
+            ldigest = layer["digest"].replace("sha256:", "")
+            blob = os.path.join(parent, "blobs", "sha256", ldigest)
+            mt = layer.get("mediaType", "")
+            if os.path.isdir(blob):
+                for name in os.listdir(blob):
+                    src = os.path.join(blob, name)
+                    dst = os.path.join(merged, name)
+                    if os.path.isdir(src):
+                        shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(src, dst)
+            elif "gzip" in mt:
                 with gzip.open(blob) as gz:
                     with tarfile.open(fileobj=gz) as tar:
-                        tar.extractall(root)
+                        tar.extractall(merged)
             else:
                 with tarfile.open(blob) as tar:
-                    tar.extractall(root)
+                    tar.extractall(merged)
 
-        parent_usr_etc = os.path.join(root, "usr", "etc")
-        if os.path.isdir(parent_usr_etc):
-            layer_etc = os.path.join(layer, "etc")
-            layer_usr_etc = os.path.join(layer, "usr", "etc")
-            os.makedirs(layer_etc, exist_ok=True)
-            for name in os.listdir(parent_usr_etc):
-                src = os.path.join(parent_usr_etc, name)
-                dst = os.path.join(layer_etc, name)
+        # Copy /layer content on top — takes priority over parent
+        if os.path.isdir(layer_src):
+            for name in os.listdir(layer_src):
+                src = os.path.join(layer_src, name)
+                dst = os.path.join(merged, name)
                 if os.path.isdir(src):
                     shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True)
                 else:
                     shutil.copy2(src, dst)
-            os.makedirs(layer_usr_etc, exist_ok=True)
-            with open(os.path.join(layer_usr_etc, ".wh..wh..opq"), "w") as f:
-                pass
-            print("Parent /usretc migrated to /layer/etc with opaque whiteout")
-        else:
-            print("No /usr/etc in parent; nothing to migrate")
-    finally:
-        shutil.rmtree(root, ignore_errors=True)
+
+    # Normalize /usr/etc → /etc on the merged rootfs
+    usr_etc = os.path.join(merged, "usr", "etc")
+    etc_dir = os.path.join(merged, "etc")
+    if os.path.isdir(usr_etc):
+        os.makedirs(etc_dir, exist_ok=True)
+        for name in os.listdir(usr_etc):
+            src = os.path.join(usr_etc, name)
+            dst = os.path.join(etc_dir, name)
+            if os.path.isdir(src):
+                shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, dst)
+        shutil.rmtree(usr_etc)
+        print("Merged rootfs: /usretc migrated to /etc", file=sys.stderr)
+    else:
+        print("Merged rootfs: no /usr/etc present", file=sys.stderr)
+
+    # Write marker so build-oci step knows where the merged rootfs is
+    with open("/merged-path", "w") as f:
+        f.write(merged)
     PYEOF
 
   - |
@@ -138,9 +131,7 @@ config:
     images:
     - os: linux
       architecture: "%{go-arch}"
-      parent:
-        image: /parent
-      layer: /layer
+      layer: $(cat /merged-path)
       comment: "KDE Linux image (full desktop)"
       config:
         Labels:
