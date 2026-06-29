@@ -193,7 +193,7 @@ export:
     #!/usr/bin/env bash
     set -euo pipefail
     SUDO_CMD=""
-    if [ "$(id -u)" -ne 0 ]; then
+    if ! podman pull --help >/dev/null 2>&1; then
         SUDO_CMD="sudo"
     fi
     echo "==> Exporting Aurora Tromso OCI image..."
@@ -235,7 +235,7 @@ export-kde:
     #!/usr/bin/env bash
     set -euo pipefail
     SUDO_CMD=""
-    if [ "$(id -u)" -ne 0 ]; then
+    if ! podman pull --help >/dev/null 2>&1; then
         SUDO_CMD="sudo"
     fi
     echo "==> Exporting KDE Minimal OCI image..."
@@ -245,19 +245,44 @@ export-kde:
     IMAGE_ID=$($SUDO_CMD podman pull -q oci:.build-out-kde)
     rm -rf .build-out-kde
     DATE_TAG="$(date -u +%Y%m%d)"
+    # Build label arguments for dynamic OCI metadata
+    LABEL_ARGS=""
+    if [ -n "${OCI_IMAGE_CREATED}" ]; then
+        LABEL_ARGS="${LABEL_ARGS} --label org.opencontainers.image.created=${OCI_IMAGE_CREATED}"
+    fi
+    if [ -n "${OCI_IMAGE_REVISION}" ]; then
+        LABEL_ARGS="${LABEL_ARGS} --label org.opencontainers.image.revision=${OCI_IMAGE_REVISION}"
+    fi
+    if [ -n "${OCI_IMAGE_VERSION}" ]; then
+        LABEL_ARGS="${LABEL_ARGS} --label org.opencontainers.image.version=${OCI_IMAGE_VERSION}"
+    fi
+    DATE_TAG="$(date -u +%Y%m%d)"
     printf 'FROM %s\nRUN sed -i "s/^VERSION_ID=.*/VERSION_ID=\\"%s\\"/" /usr/lib/os-release \\\n    && sed -i "s/^IMAGE_VERSION=.*/IMAGE_VERSION=\\"%s\\"/" /usr/lib/os-release\n' "$IMAGE_ID" "$DATE_TAG" "$DATE_TAG" \
-        | $SUDO_CMD podman build --pull=never --security-opt label=type:unconfined_t -t "tromso-kde:latest" -f - .
+        | $SUDO_CMD podman build --pull=never --security-opt label=type:unconfined_t ${LABEL_ARGS} -t "tromso-kde:latest" -f - .
     $SUDO_CMD podman rmi "$IMAGE_ID" || true
     echo "==> Export complete: tromso-kde:latest"
+    # Copy to rootful storage for bootc (which runs as root). This is a no-op
+    # if rootless podman was not used.
+    if [ -z "$SUDO_CMD" ]; then
+        echo "==> Copying image to rootful storage for bootc..."
+        podman save localhost/tromso-kde:latest | sudo podman load 2>/dev/null || \
+            echo "==> Warning: Could not copy to rootful storage (sudo password required)."
+    fi
 
 [group('test')]
 generate-bootable-kde $base_dir=base_dir $filesystem=filesystem:
     #!/usr/bin/env bash
     set -euo pipefail
+    # Check rootful storage first, then rootless
     if ! sudo podman image exists "tromso-kde:latest"; then
-        echo "ERROR: Image 'tromso-kde:latest' not found in podman." >&2
-        echo "Run 'just build-kde' first." >&2
-        exit 1
+        if podman image exists "tromso-kde:latest"; then
+            echo "==> Image found in rootless storage; copying to rootful for bootc..."
+            podman save localhost/tromso-kde:latest | sudo podman load
+        else
+            echo "ERROR: Image 'tromso-kde:latest' not found in podman." >&2
+            echo "Run 'just build-kde' first." >&2
+            exit 1
+        fi
     fi
     if [ ! -e "${base_dir}/bootable.raw" ] ; then
         echo "==> Creating 30G sparse disk image..."
@@ -269,7 +294,9 @@ generate-bootable-kde $base_dir=base_dir $filesystem=filesystem:
         -v /run/containers:/run/containers \
         -v /dev:/dev \
         -v "${base_dir}:/data" \
+        -v /etc/containers/policy.json:/etc/containers/policy.json:ro \
         --security-opt label=type:unconfined_t \
+        -e HOME=/root \
         "tromso-kde:latest" \
         bash -c "/usr/bin/bootc install to-disk \
             --via-loopback /data/bootable.raw \
@@ -333,9 +360,14 @@ generate-bootable-image $base_dir=base_dir $filesystem=filesystem:
     set -euo pipefail
 
     if ! sudo podman image exists "{{image_name}}:{{image_tag}}"; then
-        echo "ERROR: Image '{{image_name}}:{{image_tag}}' not found in podman." >&2
-        echo "Run 'just build' first to build and export the OCI image." >&2
-        exit 1
+        if podman image exists "{{image_name}}:{{image_tag}}"; then
+            echo "==> Image found in rootless storage; copying to rootful for bootc..."
+            podman save "{{image_name}}:{{image_tag}}" | sudo podman load
+        else
+            echo "ERROR: Image '{{image_name}}:{{image_tag}}' not found in podman." >&2
+            echo "Run 'just build' first to build and export the OCI image." >&2
+            exit 1
+        fi
     fi
 
     if [ ! -e "${base_dir}/bootable.raw" ] ; then
@@ -407,7 +439,7 @@ generate-bootable-image $base_dir=base_dir $filesystem=filesystem:
 # ── bootc helper ─────────────────────────────────────────────────────
 [group('dev')]
 bootc *ARGS:
-    sudo bash -c 'podman run --rm --privileged --pid=host -v /var/lib/containers:/var/lib/containers -v /run/containers:/run/containers -v /dev:/dev -v "{{base_dir}}:/data" --security-opt label=type:unconfined_t "{{image_name}}:{{image_tag}}" bash -c "/usr/bin/bootc {{ARGS}}"'
+    sudo bash -c 'podman run --rm --privileged --pid=host -v /var/lib/containers:/var/lib/containers -v /run/containers:/run/containers -v /dev:/dev -v "{{base_dir}}:/data" -v /etc/containers/policy.json:/etc/containers/policy.json:ro --security-opt label=type:unconfined_t -e HOME=/root "{{image_name}}:{{image_tag}}" bash -c "/usr/bin/bootc {{ARGS}}"'
 
 # ── Boot VM ──────────────────────────────────────────────────────────
 [group('test')]
