@@ -52,6 +52,13 @@ config:
       systemctl --root=/layer enable sshd.service || true
       # Enable flatpak-system-helper so Discover can interact with Flatpak
       systemctl --root=/layer enable flatpak-system-helper.service || true
+      # Force software rendering for plasmalogin QML greeter in VMs
+      mkdir -p /layer/usr/lib/systemd/system/plasmalogin.service.d
+      cat > /layer/usr/lib/systemd/system/plasmalogin.service.d/software-render.conf << 'EOF'
+      [Service]
+      Environment=QT_QUICK_BACKEND=software
+      Environment=KWIN_COMPOSE=Q
+      EOF
 
     - |
       # The shadow package seeds empty subordinate ID files; populate them
