@@ -250,10 +250,15 @@ For the ISO installer path (composefs enabled), gzip compression IS required:
 
 ### Pushing to Registries
 
-**NEVER use `podman push`.** Buildah 1.44.0 (podman 6.x) has a bug where `podman push` duplicates the
-config blob as an `application/octet-stream` layer in the manifest. When bootc pulls this broken image,
-it tries to extract the 1232-byte config JSON as a rootfs layer, corrupting the deployment and causing
-cascading systemd service failures.
+**NEVER use `podman push`.** Buildah 1.44.0 (podman 6.x) has a bug where both `podman push` and `podman build --squash-all` duplicate the config blob as an `application/octet-stream` layer in the manifest. When bootc pulls this broken image, it tries to extract the 1232-byte config JSON as a rootfs layer, corrupting the deployment and causing cascading systemd service failures.
+
+**NEVER use `podman build --squash-all`.** Same buildah 1.44 bug — the squashed image in containers-storage will have the config blob duplicated as a layer, which gets faithfully transferred by skopeo copy.
+
+**Use `skopeo copy` for both import and push:**
+- **Import** from OCI layout: `skopeo copy oci:.build-out containers-storage:localhost/tromso-kde:latest`
+- **Push** to registry: `skopeo copy containers-storage:localhost/tromso-kde:latest docker://ghcr.io/... --dest-creds=...`
+
+The `skopeo copy oci:...` import bypasses buildah entirely (no `podman pull`, no `podman build`), so the manifest stays clean. Use `podman save | sudo podman load` only for rootless→rootful copy (that path doesn't rewrite manifests).
 
 **Always use `skopeo copy` with `--dest-creds`** (run as normal user, not sudo):
 

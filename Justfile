@@ -192,30 +192,12 @@ build:
 export:
     #!/usr/bin/env bash
     set -euo pipefail
-    SUDO_CMD=""
-    if ! podman pull --help >/dev/null 2>&1; then
-        SUDO_CMD="sudo"
-    fi
     echo "==> Exporting Aurora Tromso OCI image..."
     rm -rf .build-out
     just bst artifact checkout oci/tromso.bst --directory /src/.build-out
-    echo "==> Loading and squashing OCI image..."
-    IMAGE_ID=$($SUDO_CMD podman pull -q oci:.build-out)
+    echo "==> Loading OCI image with skopeo (avoids buildah manifest bug)..."
+    skopeo copy oci:.build-out "containers-storage:localhost/{{image_name}}:{{image_tag}}"
     rm -rf .build-out
-    LABEL_ARGS=""
-    if [ -n "${OCI_IMAGE_CREATED}" ]; then
-        LABEL_ARGS="${LABEL_ARGS} --label org.opencontainers.image.created=${OCI_IMAGE_CREATED}"
-    fi
-    if [ -n "${OCI_IMAGE_REVISION}" ]; then
-        LABEL_ARGS="${LABEL_ARGS} --label org.opencontainers.image.revision=${OCI_IMAGE_REVISION}"
-    fi
-    if [ -n "${OCI_IMAGE_VERSION}" ]; then
-        LABEL_ARGS="${LABEL_ARGS} --label org.opencontainers.image.version=${OCI_IMAGE_VERSION}"
-    fi
-    DATE_TAG="$(date -u +%Y%m%d)"
-    printf 'FROM %s\nRUN sed -i "s/^VERSION_ID=.*/VERSION_ID=\\"%s\\"/" /usr/lib/os-release \\\n    && sed -i "s/^IMAGE_VERSION=.*/IMAGE_VERSION=\\"%s\\"/" /usr/lib/os-release\n' "$IMAGE_ID" "$DATE_TAG" "$DATE_TAG" \
-        | $SUDO_CMD podman build --pull=never --security-opt label=type:unconfined_t --squash-all ${LABEL_ARGS} -t "{{image_name}}:{{image_tag}}" -f - .
-    $SUDO_CMD podman rmi "$IMAGE_ID" || true
     echo "==> Export complete: {{image_name}}:{{image_tag}}"
     # Chunkify optimises the image for ostree/composefs distribution but may
     # fail if the overlay diff layer contains whiteout char devices (issue #20).
@@ -234,45 +216,22 @@ build-kde:
 export-kde:
     #!/usr/bin/env bash
     set -euo pipefail
-    SUDO_CMD=""
-    if ! podman pull --help >/dev/null 2>&1; then
-        SUDO_CMD="sudo"
-    fi
     echo "==> Exporting KDE Minimal OCI image..."
     rm -rf .build-out-kde
     just bst artifact checkout oci/kde-minimal.bst --directory /src/.build-out-kde
-    echo "==> Loading and squashing OCI image..."
-    IMAGE_ID=$($SUDO_CMD podman pull -q oci:.build-out-kde)
+    echo "==> Loading OCI image with skopeo (avoids buildah manifest bug)..."
+    skopeo copy oci:.build-out-kde containers-storage:localhost/tromso-kde:latest
     rm -rf .build-out-kde
-    DATE_TAG="$(date -u +%Y%m%d)"
-    # Build label arguments for dynamic OCI metadata
-    LABEL_ARGS=""
-    if [ -n "${OCI_IMAGE_CREATED}" ]; then
-        LABEL_ARGS="${LABEL_ARGS} --label org.opencontainers.image.created=${OCI_IMAGE_CREATED}"
-    fi
-    if [ -n "${OCI_IMAGE_REVISION}" ]; then
-        LABEL_ARGS="${LABEL_ARGS} --label org.opencontainers.image.revision=${OCI_IMAGE_REVISION}"
-    fi
-    if [ -n "${OCI_IMAGE_VERSION}" ]; then
-        LABEL_ARGS="${LABEL_ARGS} --label org.opencontainers.image.version=${OCI_IMAGE_VERSION}"
-    fi
-    DATE_TAG="$(date -u +%Y%m%d)"
-    printf 'FROM %s\nRUN sed -i "s/^VERSION_ID=.*/VERSION_ID=\\"%s\\"/" /usr/lib/os-release \\\n    && sed -i "s/^IMAGE_VERSION=.*/IMAGE_VERSION=\\"%s\\"/" /usr/lib/os-release\n' "$IMAGE_ID" "$DATE_TAG" "$DATE_TAG" \
-        | $SUDO_CMD podman build --pull=never --security-opt label=type:unconfined_t --squash-all ${LABEL_ARGS} -t "tromso-kde:latest" -f - .
-    $SUDO_CMD podman rmi "$IMAGE_ID" || true
     echo "==> Export complete: tromso-kde:latest"
-    # Copy to rootful storage for bootc (which runs as root). This is a no-op
-    # if rootless podman was not used.
-    if [ -z "$SUDO_CMD" ]; then
-        echo "==> Copying image to rootful storage for bootc..."
-        if podman save localhost/tromso-kde:latest | sudo podman load; then
-            echo "==> Rootful copy succeeded."
-        else
-            echo "==> ERROR: Could not copy image to rootful storage." >&2
-            echo "    Run this manually before 'just generate-bootable-kde':" >&2
-            echo "    podman save localhost/tromso-kde:latest | sudo podman load" >&2
-            exit 1
-        fi
+    # Copy to rootful storage for bootc (which runs as root).
+    echo "==> Copying image to rootful storage for bootc..."
+    if podman save localhost/tromso-kde:latest | sudo podman load; then
+        echo "==> Rootful copy succeeded."
+    else
+        echo "==> ERROR: Could not copy image to rootful storage." >&2
+        echo "    Run this manually before 'just generate-bootable-kde':" >&2
+        echo "    podman save localhost/tromso-kde:latest | sudo podman load" >&2
+        exit 1
     fi
 
 # ── Push to registry ───────────────────────────────────────────
@@ -294,7 +253,7 @@ push-kde registry="ghcr.io/whelanh/tromso-kde-min":
     skopeo copy \
         containers-storage:localhost/tromso-kde:latest \
         docker://{{registry}}:latest \
-        --dest-creds=whelahn:"$TOKEN"
+        --dest-creds=whelanh:"$TOKEN"
     echo "==> Push complete."
 
 [group('build')]
@@ -315,7 +274,7 @@ push registry="ghcr.io/whelanh/tromso":
     skopeo copy \
         containers-storage:localhost/{{image_name}}:{{image_tag}} \
         docker://{{registry}}:{{image_tag}} \
-        --dest-creds=whelahn:"$TOKEN"
+        --dest-creds=whelanh:"$TOKEN"
     echo "==> Push complete."
 
 [group('test')]
