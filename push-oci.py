@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
 Push a BuildStream OCI layout to a Docker Registry v2 (e.g., ghcr.io)
-using the raw HTTP API. Avoids all container-tool manifest bugs.
+using the raw HTTP API. Handles multi-layer manifests correctly.
 """
-import base64, gzip, hashlib, json, os, shutil, sys, tempfile
+import base64, gzip, hashlib, json, os, shutil, sys, tempfile, tarfile
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 REGISTRY = "ghcr.io"
-REPO = "whelanh/tromso-kde-min"
-TAG = "latest"
+REPO = os.environ.get("OCI_REPO", "whelanh/tromso-kde-min")
+TAG = os.environ.get("OCI_TAG", "latest")
 USER = "whelanh"
 PASS = (Path.home() / "chessFiles" / "ghcr_token.txt").read_text().strip()
 
@@ -23,7 +23,8 @@ def get_bearer_token():
     auth = base64.b64encode(f"{USER}:{PASS}".encode()).decode()
     url = f"https://{REGISTRY}/token?service={REGISTRY}&scope=repository:{REPO}:push,pull"
     r = Request(url, headers={"Authorization": f"Basic {auth}"})
-    _bearer_token = json.loads(urlopen(r).read())["token"]
+    data = json.loads(urlopen(r).read())
+    _bearer_token = data["token"]
     return _bearer_token
 
 def sha256_stream(path):
@@ -61,129 +62,104 @@ def blob_exists(digest):
             return False
         raise
 
-def blob_upload_file(path, expected_digest_hex):
-    """Upload a blob, streaming to avoid memory spikes."""
-    digest = "sha256:" + expected_digest_hex
+def blob_upload_file(path):
+    digest = "sha256:" + sha256_stream(path)
     if blob_exists(digest):
         print(f"  blob {digest[:16]}... already exists")
         return digest
     size = os.path.getsize(path)
-
-    # Start upload session
     resp = req("POST", f"https://{REGISTRY}/v2/{REPO}/blobs/uploads/")
     loc = resp.headers["Location"]
     if loc.startswith("/"):
         loc = f"https://{REGISTRY}{loc}"
     sep = "&" if "?" in loc else "?"
-
-    # Stream the file in the PUT request body.
-    # We can't use urlopen with a fileobj directly, so we read in chunks
-    # and construct the request. For large files, use a generator body.
-    import subprocess as sp
-    put_url = f"{loc}{sep}digest={digest}"
-    print(f"  uploading {digest[:16]}... ({size} bytes) via curl...")
-    proc = sp.run([
-        "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
-        "-X", "PUT",
-        "-H", f"Authorization: Bearer {get_bearer_token()}",
-        "-H", "Content-Type: application/octet-stream",
-        "--data-binary", f"@{path}",
-        put_url
-    ], capture_output=True, text=True)
-    code = proc.stdout.strip()
-    if code != "201":
-        print(f"ERROR: upload failed with HTTP {code}: {proc.stderr[:200]}", file=sys.stderr)
-        sys.exit(1)
-    print(f"  uploaded {digest[:16]}... (HTTP {code})")
+    data = open(path, "rb").read()
+    req("PUT", f"{loc}{sep}digest={digest}", data=data,
+        headers={"Content-Type": "application/octet-stream",
+                 "Content-Length": str(size)})
+    print(f"  blob {digest[:16]}... uploaded ({size} bytes)")
     return digest
 
+def compress_layer(layer_path):
+    if layer_path.is_dir():
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".tar.gz")
+        with gzip.GzipFile(fileobj=tmp, mode="wb") as gz:
+            with tarfile.open(fileobj=gz, mode="w|") as tar:
+                for item in sorted(os.listdir(str(layer_path))):
+                    tar.add(os.path.join(str(layer_path), item), arcname=item)
+        tmp.close()
+        media_type = "application/vnd.oci.image.layer.v1.tar+gzip"
+        return (Path(tmp.name), media_type, os.path.getsize(tmp.name), True)
+    with open(str(layer_path), "rb") as f:
+        magic = f.read(2)
+    if magic == b'\x1f\x8b':
+        return (layer_path, "application/vnd.oci.image.layer.v1.tar+gzip",
+                os.path.getsize(str(layer_path)), False)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".tar.gz")
+    with open(str(layer_path), "rb") as fin, gzip.GzipFile(fileobj=tmp, mode="wb") as gz:
+        shutil.copyfileobj(fin, gz)
+    tmp.close()
+    return (Path(tmp.name), "application/vnd.oci.image.layer.v1.tar+gzip",
+            os.path.getsize(tmp.name), True)
+
 def main():
-    oci_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".build-out-kde")
+    oci_dir_arg = sys.argv[1] if len(sys.argv) > 1 else ".build-out-kde"
+    oci_dir = Path(oci_dir_arg)
     if not oci_dir.exists():
         print(f"Usage: {sys.argv[0]} [OCI_DIR]")
         sys.exit(1)
 
-    # Read manifest
+    print(f"Pushing {oci_dir} → {REGISTRY}/{REPO}:{TAG}")
+
     index = json.loads((oci_dir / "index.json").read_text())
     mf_digest = index["manifests"][0]["digest"].replace("sha256:", "")
     manifest = json.loads((oci_dir / "blobs" / "sha256" / mf_digest).read_text())
+    print(f"Manifest has {len(manifest['layers'])} layer(s)")
 
     # Config blob
     cd = manifest["config"]["digest"].replace("sha256:", "")
     config_path = oci_dir / "blobs" / "sha256" / cd
     config_size = config_path.stat().st_size
-    config_digest_hex = cd
-    print(f"Config: {cd} ({config_size} bytes)")
+    config_digest = blob_upload_file(str(config_path))
+    print(f"Config: {config_digest} ({config_size} bytes)")
 
-    # Layer blob — compress with gzip
-    ld = manifest["layers"][0]["digest"].replace("sha256:", "")
-    layer_path = oci_dir / "blobs" / "sha256" / ld
-    layer_raw_size = layer_path.stat().st_size
-    print(f"Layer raw: {ld} ({layer_raw_size} bytes) — compressing...")
-
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".tar.gz")
+    # Layer blobs
+    new_layers = []
+    tmp_files = []
     try:
-        with open(layer_path, "rb") as fin, gzip.GzipFile(fileobj=tmp, mode="wb") as gz:
-            shutil.copyfileobj(fin, gz)
-        tmp.close()
-        compressed_size = os.path.getsize(tmp.name)
+        for i, layer in enumerate(manifest["layers"]):
+            ld = layer["digest"].replace("sha256:", "")
+            layer_path = oci_dir / "blobs" / "sha256" / ld
+            print(f"Layer {i}: {ld[:16]}... ({layer_path.stat().st_size} bytes)", end="")
+            cpath, mt, csize, is_tmp = compress_layer(layer_path)
+            if is_tmp:
+                tmp_files.append(cpath)
+            print(f" → {csize} bytes")
+            cdigest = blob_upload_file(str(cpath))
+            new_layers.append({"mediaType": mt, "digest": cdigest, "size": csize})
 
-        # Compute digest of compressed file
-        compressed_digest_hex = sha256_stream(tmp.name)
-        print(f"  compressed to {compressed_size} bytes (sha256:{compressed_digest_hex[:16]}...)")
+        # Build clean manifest
+        manifest_v2 = json.dumps({
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "config": {
+                "mediaType": "application/vnd.oci.image.config.v1+json",
+                "digest": config_digest,
+                "size": config_size,
+            },
+            "layers": new_layers,
+        }, separators=(",", ":")).encode()
+        print(f"Manifest: {len(manifest_v2)} bytes")
 
-        # Upload blobs (streaming via curl)
-        config_digest = blob_upload_file(str(config_path), config_digest_hex)
-        layer_digest = blob_upload_file(tmp.name, compressed_digest_hex)
-
+        manifest_url = f"https://{REGISTRY}/v2/{REPO}/manifests/{TAG}"
+        resp = req("PUT", manifest_url, data=manifest_v2,
+                   headers={"Content-Type": "application/vnd.oci.image.manifest.v1+json"})
+        digest = resp.headers.get("Docker-Content-Digest", "unknown")
+        print(f"\nPush complete! Digest: {digest}")
     finally:
-        os.unlink(tmp.name)
-
-    # Build clean manifest
-    manifest_v2 = json.dumps({
-        "schemaVersion": 2,
-        "mediaType": "application/vnd.oci.image.manifest.v1+json",
-        "config": {
-            "mediaType": "application/vnd.oci.image.config.v1+json",
-            "digest": config_digest,
-            "size": config_size,
-        },
-        "layers": [
-            {
-                "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
-                "digest": layer_digest,
-                "size": compressed_size,
-            }
-        ],
-    }).encode()
-
-    # Push manifest via curl (PUT /v2/<name>/manifests/<tag>)
-    import subprocess as sp
-    manifest_url = f"https://{REGISTRY}/v2/{REPO}/manifests/{TAG}"
-    print(f"Pushing manifest ({len(manifest_v2)} bytes)...")
-    mf_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-    try:
-        mf_tmp.write(manifest_v2)
-        mf_tmp.close()
-        proc = sp.run([
-            "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
-            "-X", "PUT",
-            "-H", f"Authorization: Bearer {get_bearer_token()}",
-            "-H", "Content-Type: application/vnd.oci.image.manifest.v1+json",
-            "--data-binary", f"@{mf_tmp.name}",
-            manifest_url
-        ], capture_output=True, text=True)
-        code = proc.stdout.strip()
-        if code not in ("201", "200"):
-            print(f"ERROR: manifest push failed HTTP {code}: {proc.stderr[:200]}", file=sys.stderr)
-            sys.exit(1)
-        print(f"Push complete! (HTTP {code})")
-    finally:
-        os.unlink(mf_tmp.name)
-
-    # Cleanup OCI dir
-    shutil.rmtree(str(oci_dir))
-    print(f"Cleaned up {oci_dir}")
+        for t in tmp_files:
+            if t.exists():
+                os.unlink(str(t))
 
 if __name__ == "__main__":
     try:

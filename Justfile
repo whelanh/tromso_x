@@ -224,9 +224,9 @@ export-kde:
     echo "==> Exporting KDE Minimal OCI image..."
     rm -rf .build-out-kde
     just bst artifact checkout oci/kde-minimal.bst --directory /src/.build-out-kde
-    echo "==> Pushing directly from OCI layout to registry (raw HTTP API, no tool bug)..."
-    python3 push-oci.py .build-out-kde
-    # push-oci.py cleans up .build-out-kde on success
+    echo "==> Pushing with skopeo copy (avoids buildah manifest bug)..."
+    skopeo copy oci:.build-out-kde "docker://ghcr.io/whelanh/tromso-kde-min:latest" --dest-creds=whelanh:"$TOKEN"
+    rm -rf .build-out-kde
     echo "==> Export complete: pushed to ghcr.io/whelanh/tromso-kde-min:latest"
     echo ""
     echo "    For VM bootc switch:"
@@ -237,16 +237,20 @@ export-kde:
 push-kde registry="ghcr.io/whelanh/tromso-kde-min":
     #!/usr/bin/env bash
     set -euo pipefail
+    TOKEN="${GHCR_TOKEN:-$(cat ~/chessFiles/ghcr_token.txt 2>/dev/null || true)}"
+    if [ -z "$TOKEN" ]; then
+        echo "ERROR: No GHCR token found. Set GHCR_TOKEN env var or create ~/chessFiles/ghcr_token.txt." >&2
+        exit 1
+    fi
     echo "==> Pushing from OCI layout to {{registry}}..."
     echo "    (Re-checkouts artifact to get clean manifest)"
     echo ""
-    echo "    Requires GHCR_TOKEN env var or ~/chessFiles/ghcr_token.txt."
-    echo ""
     export-dir=".build-out-push-$$"
     rm -rf "$export-dir"
-    just bst artifact checkout oci/kde-minimal.bst --directory "/src/$export-dir" 2>&1 | tail -1 || true
+    just bst artifact checkout oci/kde-minimal.bst --directory "/src/$export-dir"
     if [ -d "$export-dir" ]; then
-        python3 push-oci.py "$export-dir"
+        skopeo copy "oci:${export-dir}" "docker://{{registry}}:latest" --dest-creds=whelanh:"$TOKEN"
+        rm -rf "$export-dir"
         echo "==> Push complete."
     else
         echo "ERROR: Could not checkout artifact." >&2

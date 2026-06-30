@@ -45,111 +45,92 @@ config:
   - |
     glib-compile-schemas /layer/usr/share/glib-2.0/schemas || true
 
-  # Merge parent OCI rootfs (ALL layers) with /layer into a single
-  # rootfs, then normalize /usr/etc → /etc so bootc sees exactly one.
-  # Uses robust_merge() that handles dangling symlinks and type conflicts
-  # (dir↔file↔symlink) which cp -a and shutil.copytree both choke on.
+  # Merge /layer/usr/etc into /layer/etc if present, then add opaque
+  # whiteout so the parent's /usr/etc (if any) is hidden from bootc.
+  # bootc extracts parent layers then /layer; the opaque whiteout in
+  # /layer/usr/etc/.wh..wh..opq tells the overlay to hide the lower
+  # /usrɛtc entirely, avoiding the "Tree contains both /etc and /usr/etc"
+  # error during deployment.
+  - |
+    if [ -d /layer/usr/etc ]; then
+      mkdir -p /layer/etc
+      cp -a /layer/usr/etc/. /layer/etc/
+      rm -rf /layer/usr/etc
+    fi
+    mkdir -p /layer/usr/etc
+    : > /layer/usr/etc/.wh..wh..opq
+
+  # Also migrate parent OCI's /usr/etc (from freedesktop-sdk OSTree
+  # convention) to /layer/etc so no bootc-visible config is lost.
   - |
     python3 << 'PYEOF'
-    import json, os, shutil, sys, tarfile, gzip
-
-    def _remove(path):
-        if not os.path.lexists(path):
-            return
-        if os.path.islink(path) or not os.path.isdir(path):
-            os.unlink(path)
-        else:
-            shutil.rmtree(path)
-
-    def robust_merge(src, dst):
-        """Merge src tree into dst, handling type conflicts robustly."""
-        if not os.path.isdir(dst):
-            os.makedirs(dst, exist_ok=True)
-        for name in os.listdir(src):
-            s = os.path.join(src, name)
-            d = os.path.join(dst, name)
-            if os.path.islink(s):
-                _remove(d)
-                os.symlink(os.readlink(s), d)
-            elif os.path.isdir(s):
-                if os.path.lexists(d) and not (os.path.isdir(d) and not os.path.islink(d)):
-                    _remove(d)
-                if not os.path.isdir(d):
-                    os.makedirs(d)
-                robust_merge(s, d)
-            else:
-                _remove(d)
-                shutil.copy2(s, d)
+    import json, os, sys, shutil, tempfile
 
     parent = "/parent"
-    layer_src = "/layer"
-    merged = "/layer-merged"
-
-    if os.path.isdir(merged):
-        shutil.rmtree(merged)
-    os.makedirs(merged)
+    layer = "/layer"
 
     if not (os.path.isdir(parent) and os.path.isfile(os.path.join(parent, "index.json"))):
-        print("Parent is not an OCI layout — using /layer as-is", file=sys.stderr)
-        robust_merge(layer_src, merged)
-    else:
-        parent_out = "/parent-extracted"
-        if os.path.isdir(parent_out):
-            shutil.rmtree(parent_out)
-        os.makedirs(parent_out)
+        print("No index.json in parent OCI layout — skipping")
+        sys.exit(0)
 
+    try:
         with open(os.path.join(parent, "index.json")) as f:
             index = json.load(f)
-        mdigest = index["manifests"][0]["digest"].replace("sha256:", "")
+    except Exception as e:
+        print(f"Cannot read parent index.json: {e}")
+        sys.exit(0)
+
+    try:
+        mref = index["manifests"][0]["digest"]
+        mdigest = mref.replace("sha256:", "")
         with open(os.path.join(parent, "blobs", "sha256", mdigest)) as f:
             manifest = json.load(f)
+    except Exception as e:
+        print(f"Cannot read parent manifest: {e}")
+        sys.exit(0)
 
-        for layer in manifest["layers"]:
-            ldigest = layer["digest"].replace("sha256:", "")
-            blob = os.path.join(parent, "blobs", "sha256", ldigest)
-            mt = layer.get("mediaType", "")
-            if os.path.isdir(blob):
-                for name in os.listdir(blob):
-                    s = os.path.join(blob, name)
-                    d = os.path.join(parent_out, name)
-                    if os.path.islink(s):
-                        if os.path.lexists(d):
-                            _remove(d)
-                        os.symlink(os.readlink(s), d)
-                    elif os.path.isdir(s):
-                        shutil.copytree(s, d, symlinks=True, dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(s, d)
-            elif "gzip" in mt:
+    last = manifest["layers"][-1]
+    ldigest = last["digest"].replace("sha256:", "")
+    blob = os.path.join(parent, "blobs", "sha256", ldigest)
+
+    root = tempfile.mkdtemp()
+    try:
+        if os.path.isdir(blob):
+            for name in os.listdir(blob):
+                src = os.path.join(blob, name)
+                dst = os.path.join(root, name)
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(src, dst)
+        else:
+            import tarfile, gzip
+            mt = last.get("mediaType", "")
+            if "gzip" in mt:
                 with gzip.open(blob) as gz:
                     with tarfile.open(fileobj=gz) as tar:
-                        tar.extractall(parent_out)
+                        tar.extractall(root)
             else:
                 with tarfile.open(blob) as tar:
-                    tar.extractall(parent_out)
+                    tar.extractall(root)
 
-        # Merge parent content into merged dir, then overlay /layer
-        robust_merge(parent_out, merged)
-        shutil.rmtree(parent_out)
-        robust_merge(layer_src, merged)
-
-    # Normalize /usr/etc → /etc on the merged rootfs
-    usr_etc = os.path.join(merged, "usr", "etc")
-    etc_dir = os.path.join(merged, "etc")
-    if os.path.isdir(usr_etc):
-        robust_merge(usr_etc, etc_dir)
-        shutil.rmtree(usr_etc)
-        print("Merged rootfs: /usretc migrated to /etc", file=sys.stderr)
-    else:
-        print("Merged rootfs: no /usr/etc present", file=sys.stderr)
-
-    # Remove parent OCI symlinks / directories from merged rootfs
-    for d in ("ostree",):
-        p = os.path.join(merged, d)
-        _remove(p)
-
-    with open("/merged-path", "w") as f:
-        f.write(merged)
+        parent_usr_etc = os.path.join(root, "usr", "etc")
+        if os.path.isdir(parent_usr_etc):
+            layer_etc = os.path.join(layer, "etc")
+            os.makedirs(layer_etc, exist_ok=True)
+            for name in os.listdir(parent_usr_etc):
+                src = os.path.join(parent_usr_etc, name)
+                dst = os.path.join(layer_etc, name)
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(src, dst)
+            # Whiteout already created in previous step
+            print("Parent /usretc migrated to /layer/etc")
+        else:
+            print("No /usr/etc in parent; nothing to migrate")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
     PYEOF
 
   - |
@@ -160,7 +141,9 @@ config:
     images:
     - os: linux
       architecture: "%{go-arch}"
-      layer: $(cat /merged-path)
+      parent:
+        image: /parent
+      layer: /layer
       comment: "KDE Linux image (full desktop)"
       config:
         Labels:

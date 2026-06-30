@@ -159,8 +159,12 @@ config:
       REPOEOF
 
     # Merge parent OCI rootfs (ALL layers) with /layer into a single
-    # rootfs, then normalize /usr/etc → /etc so bootc sees exactly one.
-    # Uses robust_merge() that handles dangling symlinks and type conflicts.
+    # rootfs.  Move parent's /usr/etc content into /etc (bootc/ostree
+    # convention expects base config in /etc, not /usr/etc, and will
+    # migrate it internally during deployment).  A single-layer OCI
+    # avoids the "Tree contains both /etc and /usr/etc" error that
+    # occurs when bootc extracts multi-layer images sequentially
+    # (whiteouts in OCI layers are not processed by bootc/ostree).
     - |
       python3 << 'PYEOF'
       import json, os, shutil, sys, tarfile, gzip
@@ -239,18 +243,29 @@ config:
                   with tarfile.open(blob) as tar:
                       tar.extractall(parent_out)
 
+          # Merge parent into merged rootfs — move /usr/etc → /etc so
+          # bootc's ostree commit sees a single config directory.
+          parent_usr_etc = os.path.join(parent_out, "usr", "etc")
+          if os.path.isdir(parent_usr_etc):
+              robust_merge(parent_usr_etc, os.path.join(merged, "etc"))
+              shutil.rmtree(parent_usr_etc)
+              print("Parent /usretc merged into /etc", file=sys.stderr)
           robust_merge(parent_out, merged)
           shutil.rmtree(parent_out)
+
+          # Merge /layer on top (overwrites /etc entries with layer config)
+          layer_usr_etc = os.path.join(layer_src, "usr", "etc")
+          if os.path.isdir(layer_usr_etc):
+              robust_merge(layer_usr_etc, os.path.join(merged, "etc"))
+              shutil.rmtree(layer_usr_etc)
+              print("Layer /usretc merged into /etc", file=sys.stderr)
           robust_merge(layer_src, merged)
 
-      usr_etc = os.path.join(merged, "usr", "etc")
-      etc_dir = os.path.join(merged, "etc")
-      if os.path.isdir(usr_etc):
-          robust_merge(usr_etc, etc_dir)
-          shutil.rmtree(usr_etc)
-          print("Merged rootfs: /usretc migrated to /etc", file=sys.stderr)
-      else:
-          print("Merged rootfs: no /usr/etc present", file=sys.stderr)
+      # Ensure no /usr/etc remains in the merged rootfs
+      usr_etc_path = os.path.join(merged, "usr", "etc")
+      if os.path.isdir(usr_etc_path):
+          shutil.rmtree(usr_etc_path)
+          print("Removed stray /usr/etc from merged rootfs", file=sys.stderr)
 
       for d in ("ostree",):
           _remove(os.path.join(merged, d))
@@ -259,10 +274,8 @@ config:
           f.write(merged)
       PYEOF
 
-    # Override prepare-root.conf to disable composefs. The layer may bring
-    # bootc-config.bst (junction) with enabled=maybe, which would overwrite
-    # the parent's fix (main repo stack.bst) during robust_merge.  We write
-    # the final version here after merge to ensure it wins.
+    # Override prepare-root.conf to disable composefs. Written after
+    # merge to ensure it lands in the final single-layer rootfs.
     - |
       printf '[composefs]\nenabled = no\n\n[sysroot]\nreadonly = true\n' > "$(cat /merged-path)/usr/lib/ostree/prepare-root.conf"
 
