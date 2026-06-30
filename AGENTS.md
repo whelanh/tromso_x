@@ -240,10 +240,34 @@ When `composeFsBackend: true`:
 
 ### OCI Layer Compression
 
-The tromso OCI image must have gzip-compressed layers for composefs to work:
-- Set `gzip: gzip` in `elements/oci/tromso.bst` (NOT `gzip: disabled`)
-- `gzip: disabled` produces uncompressed layers that cause bootc's composefs splitstream to deadlock
-- In the ISO build, force gzip re-compression when exporting: `skopeo copy --dest-compress-format gzip --dest-force-compress-format`
+For normal bootc images (composefs disabled), use `gzip: disabled` in `build-oci` config — Dakota convention.
+This avoids double-compression: BuildStream already compresses layers, `gzip: disabled` wraps the raw tar.
+
+For the ISO installer path (composefs enabled), gzip compression IS required:
+- The ISO builder must use `gzip: gzip` or re-compress via:
+  `skopeo copy --dest-compress-format gzip --dest-force-compress-format`
+- Uncompressed layers cause bootc's composefs splitstream to deadlock
+
+### Pushing to Registries
+
+**NEVER use `podman push`.** Buildah 1.44.0 (podman 6.x) has a bug where `podman push` duplicates the
+config blob as an `application/octet-stream` layer in the manifest. When bootc pulls this broken image,
+it tries to extract the 1232-byte config JSON as a rootfs layer, corrupting the deployment and causing
+cascading systemd service failures.
+
+**Always use `skopeo copy` instead:**
+```bash
+sudo skopeo copy \
+  containers-storage:localhost/tromso-kde:latest \
+  docker://ghcr.io/whelanh/tromso-kde-min:latest
+```
+
+The `just push-kde` and `just push` recipes in the Justfile use skopeo copy. Run them as:
+```bash
+just push-kde ghcr.io/whelanh/tromso-kde-min
+# or for the full Aurora image:
+just push ghcr.io/whelanh/tromso
+```
 
 ### VFS Containers-Storage in Squashfs
 

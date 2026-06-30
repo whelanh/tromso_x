@@ -275,6 +275,37 @@ export-kde:
         fi
     fi
 
+# ── Push to registry ───────────────────────────────────────────
+[group('build')]
+push-kde registry="ghcr.io/whelanh/tromso-kde-min":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SUDO_CMD=""
+    if [ "$(id -u)" -ne 0 ]; then
+        SUDO_CMD="sudo"
+    fi
+    echo "==> Pushing tromso-kde:latest to {{registry}}..."
+    echo "    Using skopeo copy (podman push produces broken manifests with buildah 1.44)"
+    $SUDO_CMD skopeo copy \
+        containers-storage:localhost/tromso-kde:latest \
+        docker://{{registry}}:latest
+    echo "==> Push complete."
+
+[group('build')]
+push registry="ghcr.io/whelanh/tromso":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SUDO_CMD=""
+    if [ "$(id -u)" -ne 0 ]; then
+        SUDO_CMD="sudo"
+    fi
+    echo "==> Pushing {{image_name}}:{{image_tag}} to {{registry}}..."
+    echo "    Using skopeo copy (podman push produces broken manifests with buildah 1.44)"
+    $SUDO_CMD skopeo copy \
+        containers-storage:localhost/{{image_name}}:{{image_tag}} \
+        docker://{{registry}}:{{image_tag}}
+    echo "==> Push complete."
+
 [group('test')]
 generate-bootable-kde $base_dir=base_dir $filesystem=filesystem:
     #!/usr/bin/env bash
