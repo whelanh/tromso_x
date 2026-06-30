@@ -232,9 +232,12 @@ export-kde:
     rm -rf .build-out-kde
     echo "==> Export complete: pushed to ghcr.io/whelanh/tromso-kde-min:latest"
     echo ""
-    echo "    For local bootc testing:"
+    echo "    For local bootable disk image (generate-bootable-kde):"
     echo "    sudo podman pull ghcr.io/whelanh/tromso-kde-min:latest"
     echo "    sudo podman tag ghcr.io/whelanh/tromso-kde-min:latest localhost/tromso-kde:latest"
+    echo ""
+    echo "    For VM bootc switch (no local pull needed):"
+    echo "    sudo bootc switch ghcr.io/whelanh/tromso-kde-min:latest"
 
 # ── Push to registry ───────────────────────────────────────────
 [group('build')]
