@@ -194,5 +194,9 @@ useradd -m -G video,render,input,audio,wheel,flatpak -s /bin/zsh aurora
 echo 'aurora:aurora' | chpasswd
 
 # Push to registry (use skopeo, NOT podman push — buildah bug)
+# First-time auth (skopeo auth is separate from podman):
+cat ~/chessFiles/ghcr_token.txt | sudo skopeo login ghcr.io -u whelanh --password-stdin
+
+# Then push:
 just push-kde ghcr.io/whelanh/tromso-kde-min
 ```

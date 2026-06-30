@@ -256,6 +256,13 @@ it tries to extract the 1232-byte config JSON as a rootfs layer, corrupting the 
 cascading systemd service failures.
 
 **Always use `skopeo copy` instead:**
+
+First authenticate (skopeo auth is separate from podman):
+```bash
+cat ~/chessFiles/ghcr_token.txt | sudo skopeo login ghcr.io -u whelanh --password-stdin
+```
+
+Then push:
 ```bash
 sudo skopeo copy \
   containers-storage:localhost/tromso-kde:latest \

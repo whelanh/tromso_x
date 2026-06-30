@@ -286,6 +286,10 @@ push-kde registry="ghcr.io/whelanh/tromso-kde-min":
     fi
     echo "==> Pushing tromso-kde:latest to {{registry}}..."
     echo "    Using skopeo copy (podman push produces broken manifests with buildah 1.44)"
+    echo ""
+    echo "    Make sure you are logged in first:"
+    echo "    cat ~/chessFiles/ghcr_token.txt | $SUDO_CMD skopeo login ghcr.io -u whelanh --password-stdin"
+    echo ""
     $SUDO_CMD skopeo copy \
         containers-storage:localhost/tromso-kde:latest \
         docker://{{registry}}:latest
@@ -301,6 +305,10 @@ push registry="ghcr.io/whelanh/tromso":
     fi
     echo "==> Pushing {{image_name}}:{{image_tag}} to {{registry}}..."
     echo "    Using skopeo copy (podman push produces broken manifests with buildah 1.44)"
+    echo ""
+    echo "    Make sure you are logged in first:"
+    echo "    cat ~/chessFiles/ghcr_token.txt | $SUDO_CMD skopeo login ghcr.io -u whelanh --password-stdin"
+    echo ""
     $SUDO_CMD skopeo copy \
         containers-storage:localhost/{{image_name}}:{{image_tag}} \
         docker://{{registry}}:{{image_tag}}
