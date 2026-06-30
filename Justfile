@@ -280,38 +280,42 @@ export-kde:
 push-kde registry="ghcr.io/whelanh/tromso-kde-min":
     #!/usr/bin/env bash
     set -euo pipefail
-    SUDO_CMD=""
-    if [ "$(id -u)" -ne 0 ]; then
-        SUDO_CMD="sudo"
-    fi
     echo "==> Pushing tromso-kde:latest to {{registry}}..."
-    echo "    Using skopeo copy (podman push produces broken manifests with buildah 1.44)"
+    echo "    Using skopeo copy (avoids buildah's broken podman push)"
     echo ""
-    echo "    Make sure you are logged in first:"
-    echo "    cat ~/chessFiles/ghcr_token.txt | $SUDO_CMD skopeo login ghcr.io -u whelanh --password-stdin"
+    echo "    Requires GHCR_TOKEN env var or ~/chessFiles/ghcr_token.txt."
+    echo "    Authenticate at: https://github.com/settings/tokens (scopes: repo, write:packages)"
     echo ""
-    $SUDO_CMD skopeo copy \
+    TOKEN="${GHCR_TOKEN:-$(cat ~/chessFiles/ghcr_token.txt 2>/dev/null || true)}"
+    if [ -z "$TOKEN" ]; then
+        echo "ERROR: No GHCR token found. Set GHCR_TOKEN env var or create ~/chessFiles/ghcr_token.txt." >&2
+        exit 1
+    fi
+    skopeo copy \
         containers-storage:localhost/tromso-kde:latest \
-        docker://{{registry}}:latest
+        docker://{{registry}}:latest \
+        --dest-creds=whelahn:"$TOKEN"
     echo "==> Push complete."
 
 [group('build')]
 push registry="ghcr.io/whelanh/tromso":
     #!/usr/bin/env bash
     set -euo pipefail
-    SUDO_CMD=""
-    if [ "$(id -u)" -ne 0 ]; then
-        SUDO_CMD="sudo"
-    fi
     echo "==> Pushing {{image_name}}:{{image_tag}} to {{registry}}..."
-    echo "    Using skopeo copy (podman push produces broken manifests with buildah 1.44)"
+    echo "    Using skopeo copy (avoids buildah's broken podman push)"
     echo ""
-    echo "    Make sure you are logged in first:"
-    echo "    cat ~/chessFiles/ghcr_token.txt | $SUDO_CMD skopeo login ghcr.io -u whelanh --password-stdin"
+    echo "    Requires GHCR_TOKEN env var or ~/chessFiles/ghcr_token.txt."
+    echo "    Authenticate at: https://github.com/settings/tokens (scopes: repo, write:packages)"
     echo ""
-    $SUDO_CMD skopeo copy \
+    TOKEN="${GHCR_TOKEN:-$(cat ~/chessFiles/ghcr_token.txt 2>/dev/null || true)}"
+    if [ -z "$TOKEN" ]; then
+        echo "ERROR: No GHCR token found. Set GHCR_TOKEN env var or create ~/chessFiles/ghcr_token.txt." >&2
+        exit 1
+    fi
+    skopeo copy \
         containers-storage:localhost/{{image_name}}:{{image_tag}} \
-        docker://{{registry}}:{{image_tag}}
+        docker://{{registry}}:{{image_tag}} \
+        --dest-creds=whelahn:"$TOKEN"
     echo "==> Push complete."
 
 [group('test')]

@@ -255,26 +255,28 @@ config blob as an `application/octet-stream` layer in the manifest. When bootc p
 it tries to extract the 1232-byte config JSON as a rootfs layer, corrupting the deployment and causing
 cascading systemd service failures.
 
-**Always use `skopeo copy` instead:**
+**Always use `skopeo copy` with `--dest-creds`** (run as normal user, not sudo):
 
-First authenticate (skopeo auth is separate from podman):
 ```bash
-cat ~/chessFiles/ghcr_token.txt | sudo skopeo login ghcr.io -u whelanh --password-stdin
-```
-
-Then push:
-```bash
-sudo skopeo copy \
+skopeo copy \
   containers-storage:localhost/tromso-kde:latest \
-  docker://ghcr.io/whelanh/tromso-kde-min:latest
+  docker://ghcr.io/whelanh/tromso-kde-min:latest \
+  --dest-creds=whelanh:"$(cat ~/chessFiles/ghcr_token.txt)"
 ```
 
-The `just push-kde` and `just push` recipes in the Justfile use skopeo copy. Run them as:
+**Why `--dest-creds` instead of stored auth:**
+- `sudo skopeo login` requires an interactive terminal (can't be scripted)
+- The GHCR token only has `repo, write:packages` scopes (no `read:packages`), which is fine for `--dest-creds` but some skopeo auth store paths may fail on blob-reuse checks
+- `skopeo login` stores credentials to `~/.docker/config.json` (rootless) which works, but the `--dest-creds` approach is simpler and more reliable
+
+The `just push-kde` and `just push` recipes in the Justfile use this approach. Run them as:
 ```bash
 just push-kde ghcr.io/whelanh/tromso-kde-min
 # or for the full Aurora image:
 just push ghcr.io/whelanh/tromso
 ```
+
+The token is read from `~/chessFiles/ghcr_token.txt` or the `GHCR_TOKEN` env var. Get a token at https://github.com/settings/tokens with `repo` and `write:packages` scopes.
 
 ### VFS Containers-Storage in Squashfs
 
