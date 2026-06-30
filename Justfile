@@ -224,19 +224,12 @@ export-kde:
     echo "==> Exporting KDE Minimal OCI image..."
     rm -rf .build-out-kde
     just bst artifact checkout oci/kde-minimal.bst --directory /src/.build-out-kde
-    echo "==> Pushing directly from OCI layout to registry (skips containers-storage buildah bug)..."
-    skopeo copy \
-        oci:.build-out-kde \
-        docker://ghcr.io/whelanh/tromso-kde-min:latest \
-        --dest-creds=whelanh:"$TOKEN"
-    rm -rf .build-out-kde
+    echo "==> Pushing directly from OCI layout to registry (raw HTTP API, no tool bug)..."
+    python3 push-oci.py .build-out-kde
+    # push-oci.py cleans up .build-out-kde on success
     echo "==> Export complete: pushed to ghcr.io/whelanh/tromso-kde-min:latest"
     echo ""
-    echo "    For local bootable disk image (generate-bootable-kde):"
-    echo "    sudo podman pull ghcr.io/whelanh/tromso-kde-min:latest"
-    echo "    sudo podman tag ghcr.io/whelanh/tromso-kde-min:latest localhost/tromso-kde:latest"
-    echo ""
-    echo "    For VM bootc switch (no local pull needed):"
+    echo "    For VM bootc switch:"
     echo "    sudo bootc switch ghcr.io/whelanh/tromso-kde-min:latest"
 
 # ── Push to registry ───────────────────────────────────────────
@@ -248,22 +241,12 @@ push-kde registry="ghcr.io/whelanh/tromso-kde-min":
     echo "    (Re-checkouts artifact to get clean manifest)"
     echo ""
     echo "    Requires GHCR_TOKEN env var or ~/chessFiles/ghcr_token.txt."
-    echo "    Authenticate at: https://github.com/settings/tokens (scopes: repo, write:packages)"
     echo ""
-    TOKEN="${GHCR_TOKEN:-$(cat ~/chessFiles/ghcr_token.txt 2>/dev/null || true)}"
-    if [ -z "$TOKEN" ]; then
-        echo "ERROR: No GHCR token found. Set GHCR_TOKEN env var or create ~/chessFiles/ghcr_token.txt." >&2
-        exit 1
-    fi
     export-dir=".build-out-push-$$"
     rm -rf "$export-dir"
     just bst artifact checkout oci/kde-minimal.bst --directory "/src/$export-dir" 2>&1 | tail -1 || true
     if [ -d "$export-dir" ]; then
-        skopeo copy \
-            "oci:$export-dir" \
-            "docker://{{registry}}:latest" \
-            --dest-creds=whelanh:"$TOKEN"
-        rm -rf "$export-dir"
+        python3 push-oci.py "$export-dir"
         echo "==> Push complete."
     else
         echo "ERROR: Could not checkout artifact." >&2
