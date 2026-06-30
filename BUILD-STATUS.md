@@ -1,6 +1,6 @@
 # Build Status & Next Steps
 
-Last updated: 2026-06-29
+Last updated: 2026-06-30
 
 ## Current State
 
@@ -68,6 +68,26 @@ Changed to `ON`; the X11 headers were already in build-depends, so this added no
 new runtime dependencies. The plasmoids are compiled as `.so` plugins at
 `/usr/lib/plugins/plasma/applets/`.
 
+#### 7. Single-squash-layer export + `gzip: disabled` (FIXED 2026-06-29)
+Following Dakota's pattern: export now uses `--squash-all` in `podman build` to
+produce a single-layer final image. Build-OCI configs changed from `gzip: gzip`
+to `gzip: disabled` (avoiding double-compression). This fixed the bootc
+"Tree contains both /etc and /usr/etc" error on `bootc switch`.
+
+#### 8. plasmalogin QML greeter crash in VMs (FIXED 2026-06-29)
+`plasmalogin` uses Qt Quick for its login UI. On VM GPUs (virtio-gpu/QXL)
+without hardware acceleration, Qt Quick crashes trying to initialize OpenGL.
+Added `QT_QUICK_BACKEND=software` and `KWIN_COMPOSE=Q` environment to
+plasmalogin via systemd drop-in in `kde-minimal.bst`.
+
+#### 9. podman push config-blob-as-layer bug (WORKAROUND 2026-06-29)
+Buildah 1.44.0 (podman 6.x) has a bug: `podman push` duplicates the image
+config blob as an `application/octet-stream` layer in the manifest. When bootc
+pulls the pushed image, it tries to extract the 1232-byte JSON config as a
+rootfs layer, corrupting the deployment and causing cascading systemd service
+failures. **Fix**: Use `skopeo copy` instead (or `just push-kde`/`just push`
+recipes).
+
 ### Known Issues
 
 #### 1. Unprivileged User Namespaces (UNRESOLVED)
@@ -75,11 +95,11 @@ Flatpak `run` shows "CanCreateUserNamespace() clone() failure: EPERM". This
 means unprivileged user namespaces are restricted on this kernel. Flatpak apps
 can be installed but may fail at runtime. May need `kernel.unprivileged_userns_clone=1`.
 
-#### 3. Fusermount3 Warnings
+#### 2. Fusermount3 Warnings
 `Could not unmount revokefs-fuse` warnings appear during flatpak install but
 do not prevent successful installation. The warning is cosmetic.
 
-#### 4. Flathub not auto-configured in OCI (FIXED 2026-06-29)
+#### 3. Flathub not auto-configured in OCI (FIXED 2026-06-29)
 Discover showed "No Flatpak sources" on a fresh bootc deployment because Flathub
 was only configured by the ISO installer (`install-flatpaks.sh`), not in the
 base OCI image. Fixed by shipping `/etc/flatpak/remotes.d/flathub.flatpakrepo`
@@ -140,6 +160,10 @@ to stable releases was attempted but abandoned because:
 | `elements/oci/kde-linux/image.bst` | Single-layer OCI (Dakota approach): extract all parent layers, merge, normalize to /etc | 2026-06-29 |
 | `elements/oci/tromso.bst` | Single-layer OCI + Flathub repo config | 2026-06-29 |
 | `elements/oci/kde-minimal.bst` | Single-layer OCI + Flathub repo config | 2026-06-29 |
+| `Justfile`, `kde-minimal.bst`, `tromso.bst` | `--squash-all` export + `gzip:disabled` (Dakota pattern) | 2026-06-29 |
+| `Justfile` | Added `push-kde`/`push` recipes using `skopeo copy` (buildah push bug workaround) | 2026-06-29 |
+| `AGENTS.md` | Documented podman push buildah bug, skopeo workaround, gzip:disabled convention | 2026-06-29 |
+| `kde-minimal.bst` | plasmalogin `QT_QUICK_BACKEND=software` drop-in for VM rendering | 2026-06-29 |
 
 ### kde-build-meta-x Changes
 
@@ -168,4 +192,7 @@ ssh -p 2222 aurora@127.0.0.1    # user (password: aurora)
 # Create user
 useradd -m -G video,render,input,audio,wheel,flatpak -s /bin/zsh aurora
 echo 'aurora:aurora' | chpasswd
+
+# Push to registry (use skopeo, NOT podman push — buildah bug)
+just push-kde ghcr.io/whelanh/tromso-kde-min
 ```
