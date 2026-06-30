@@ -50,9 +50,7 @@ def req(method, url, data=None, headers=None, retry=True):
             global _bearer_token
             _bearer_token = None
             return req(method, url, data, headers, retry=False)
-        body = e.read().decode()
-        print(f"HTTP {e.code} at {url[:80]}: {body[:200]}", file=sys.stderr)
-        sys.exit(1)
+        raise
 
 def blob_exists(digest):
     try:
@@ -81,23 +79,6 @@ def blob_upload_file(path, expected_digest_hex):
     # Stream the file in the PUT request body.
     # We can't use urlopen with a fileobj directly, so we read in chunks
     # and construct the request. For large files, use a generator body.
-    class FileReader:
-        def __init__(self, path):
-            self.f = open(path, "rb")
-        def __iter__(self):
-            return self
-        def __next__(self):
-            chunk = self.f.read(8*1024*1024)
-            if not chunk:
-                self.f.close()
-                raise StopIteration
-            return chunk
-        def __len__(self):
-            # Not accurate but prevents Transfer-Encoding: chunked in some cases
-            return os.path.getsize(path)
-
-    # Python's urllib doesn't support streaming PUT well.
-    # Use subprocess + curl for the upload to avoid loading 3.6GB into RAM.
     import subprocess as sp
     put_url = f"{loc}{sep}digest={digest}"
     print(f"  uploading {digest[:16]}... ({size} bytes) via curl...")
@@ -205,4 +186,12 @@ def main():
     print(f"Cleaned up {oci_dir}")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except HTTPError as e:
+        body = e.read().decode()
+        print(f"HTTP {e.code}: {body[:300]}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
