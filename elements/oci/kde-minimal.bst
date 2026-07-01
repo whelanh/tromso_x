@@ -196,6 +196,33 @@ config:
                   _remove(d)
                   shutil.copy2(s, d)
 
+      def extract_tar(tar, path):
+          for member in tar.getmembers():
+              dest = os.path.join(path, member.name)
+              if member.isdir():
+                  os.makedirs(dest, exist_ok=True)
+              elif member.issym():
+                  parent = os.path.dirname(dest)
+                  os.makedirs(parent, exist_ok=True)
+                  if os.path.lexists(dest):
+                      _remove(dest)
+                  os.symlink(member.linkname, dest)
+              elif member.islnk():
+                  parent = os.path.dirname(dest)
+                  os.makedirs(parent, exist_ok=True)
+                  if os.path.lexists(dest):
+                      _remove(dest)
+                  os.link(os.path.join(path, member.linkname), dest)
+              else:
+                  parent = os.path.dirname(dest)
+                  os.makedirs(parent, exist_ok=True)
+                  if os.path.lexists(dest):
+                      _remove(dest)
+                  src = tar.extractfile(member)
+                  if src is not None:
+                      with src, open(dest, 'wb') as dst:
+                          shutil.copyfileobj(src, dst)
+
       parent = "/parent"
       layer_src = "/layer"
       merged = "/layer-merged"
@@ -238,10 +265,10 @@ config:
               elif "gzip" in mt:
                   with gzip.open(blob) as gz:
                       with tarfile.open(fileobj=gz) as tar:
-                          tar.extractall(parent_out)
+                          extract_tar(tar, parent_out)
               else:
                   with tarfile.open(blob) as tar:
-                      tar.extractall(parent_out)
+                      extract_tar(tar, parent_out)
 
           # Merge parent into merged rootfs — move /usr/etc → /etc so
           # bootc's ostree commit sees a single config directory.

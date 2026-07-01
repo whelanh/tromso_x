@@ -93,6 +93,33 @@ config:
     ldigest = last["digest"].replace("sha256:", "")
     blob = os.path.join(parent, "blobs", "sha256", ldigest)
 
+    def extract_tar(tar, path):
+        for member in tar.getmembers():
+            dest = os.path.join(path, member.name)
+            if member.isdir():
+                os.makedirs(dest, exist_ok=True)
+            elif member.issym():
+                parent = os.path.dirname(dest)
+                os.makedirs(parent, exist_ok=True)
+                if os.path.lexists(dest):
+                    _remove(dest)
+                os.symlink(member.linkname, dest)
+            elif member.islnk():
+                parent = os.path.dirname(dest)
+                os.makedirs(parent, exist_ok=True)
+                if os.path.lexists(dest):
+                    _remove(dest)
+                os.link(os.path.join(path, member.linkname), dest)
+            else:
+                parent = os.path.dirname(dest)
+                os.makedirs(parent, exist_ok=True)
+                if os.path.lexists(dest):
+                    _remove(dest)
+                src = tar.extractfile(member)
+                if src is not None:
+                    with src, open(dest, 'wb') as dst:
+                        shutil.copyfileobj(src, dst)
+
     root = tempfile.mkdtemp()
     try:
         if os.path.isdir(blob):
@@ -109,10 +136,10 @@ config:
             if "gzip" in mt:
                 with gzip.open(blob) as gz:
                     with tarfile.open(fileobj=gz) as tar:
-                        tar.extractall(root)
+                        extract_tar(tar, root)
             else:
                 with tarfile.open(blob) as tar:
-                    tar.extractall(root)
+                    extract_tar(tar, root)
 
         parent_usr_etc = os.path.join(root, "usr", "etc")
         if os.path.isdir(parent_usr_etc):
