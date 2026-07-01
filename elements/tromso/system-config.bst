@@ -102,6 +102,49 @@ config:
     m plasmalogin input
     EOF
 
+  # On bootc systems, the persistent host /etc partition has different
+  # users than our deployed /usr/etc. systemd-sysusers has two problems:
+  # 1. It sees users already in /usr/etc/passwd and skips creating them
+  #    in the host's /etc/passwd — but services only read /etc/passwd.
+  # 2. It fails when it hits group conflicts (adm, tty) from basic.conf.
+  # Instead, sync users directly from /usr/etc to /etc at early boot.
+  - |
+    install -Dm644 /dev/stdin "%{install-root}/usr/lib/systemd/system/aurora-sysusers.service" <<'EOF'
+    [Unit]
+    Description=Aurora System User Sync
+    DefaultDependencies=no
+    After=systemd-remount-fs.service
+    Before=dbus.service dbus.socket
+    [Service]
+    Type=oneshot
+    RemainAfterExit=yes
+    ExecStartPre=-/bin/mount -o remount,rw /etc
+    ExecStart=/bin/sh -c 'while IFS=: read u _; do grep -q "^$u:" /etc/passwd || grep "^$u:" /usr/etc/passwd >> /etc/passwd; done < /usr/etc/passwd; while IFS=: read u _; do grep -q "^$u:" /etc/shadow || grep "^$u:" /usr/etc/shadow >> /etc/shadow; done < /usr/etc/shadow; while IFS=: read g _; do grep -q "^$g:" /etc/group || grep "^$g:" /usr/etc/group >> /etc/group; done < /usr/etc/group'
+    [Install]
+    WantedBy=sysinit.target
+    EOF
+  - |
+    install -d "%{install-root}/usr/lib/systemd/system/sysinit.target.wants"
+    ln -sf ../aurora-sysusers.service "%{install-root}/usr/lib/systemd/system/sysinit.target.wants/aurora-sysusers.service"
+
+  # On bootc, /var is persistent across deployments. If the host has no
+  # /var/home or /var/roothome, sessions that use these home dirs will fail.
+  # Ensure they exist via tmpfiles.d processing at boot.
+  - |
+    install -Dm644 /dev/stdin "%{install-root}/usr/lib/tmpfiles.d/aurora-files.conf" <<'EOF'
+    d /var/home 0755 root root -
+    d /var/roothome 0700 root root -
+    EOF
+
+  # New users created via useradd should automatically get the groups
+  # required for Wayland/DRM/input access on VMs and bare metal.
+  - |
+    install -Dm644 /dev/stdin "%{install-root}/etc/default/useradd" <<'EOF'
+    GROUPS=video,render,input
+    HOME=/var/home
+    SHELL=/bin/bash
+    EOF
+
   # ── sshd.service ─────────────────────────────────────────────────────
   # The upstream openssh systemd service uses Type=notify which requires
   # openssh to be compiled with --with-systemd.  freedesktop-sdk's openssh

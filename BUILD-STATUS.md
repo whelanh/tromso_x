@@ -18,7 +18,8 @@ Last updated: 2026-07-01
 - **Network, System Settings, Konsole** functional
 - **CA certificates** work for TLS connections
 - **Local `just` recipes** for both Aurora and minimal KDE images
-- **bootc switch deploys successfully** — `ghcr.io/whelanh/tromso-kde-min:latest` (FIXED 2026-07-01)
+- **bootc switch deploys and boots successfully** on VirtManager VMs with `virtio` GPU + 3D acceleration
+- **Core system services (D-Bus, polkit, resolved, etc.) start correctly** after first bootc switch
 
 ### Fixed Issues
 
@@ -41,35 +42,26 @@ is used consistently.
 **Root cause**: `kde-settings.sh` was overriding `XDG_CONFIG_DIRS` without including
 `/etc/xdg`. This prevented the XDG menu system from finding `applications.menu`,
 causing the launcher, KRunner, and Discover's "Installed" tab to show nothing.
-`KDEDIRS=/usr` and `KDE_FULL_SESSION=true` were also missing — these are present
-on every working KDE host and tell KDE it's in a full desktop session.
+`KDEDIRS=/usr` and `KDE_FULL_SESSION=true` were also missing.
 
 #### 5. Flatpak User Install (FIXED 2026-06-24)
 Two issues prevented non-root users from installing Flatpaks:
-1. **Polkit**: the default flatpak polkit rule only covers `app-install`,
-   `runtime-install`, etc. — not internal operations `Deploy` and `GetRevokefsFd`.
-   Added `99-flatpak-wheel.rules` allowing all `org.freedesktop.Flatpak.*` actions
-   for active wheel-group members.
+1. **Polkit**: added `99-flatpak-wheel.rules` allowing all `org.freedesktop.Flatpak.*` actions
 2. **fusermount3**: the compose step strips setuid bits. Added `chmod u+s`
-   on fusermount3 so non-root users can mount/unmount FUSE filesystems during
-   flatpak installation.
 
 #### 6. plasma-desktop X11 Build (FIXED 2026-06-24)
 `BUILD_X11=OFF` was disabling the entire kickoff/kicker/taskmanager plasmoid build.
-Changed to `ON`; the X11 headers were already in build-depends, so this added no
-new runtime dependencies. The plasmoids are compiled as `.so` plugins at
-`/usr/lib/plugins/plasma/applets/`.
+Changed to `ON`; the X11 headers were already in build-depends.
 
 #### 7. plasmalogin QML greeter crash in VMs (FIXED 2026-06-29)
-`plasmalogin` uses Qt Quick for its login UI. On VM GPUs (virtio-gpu/QXL)
-without hardware acceleration, Qt Quick crashes trying to initialize OpenGL.
-Added `QT_QUICK_BACKEND=software` and `KWIN_COMPOSE=Q` environment to
-plasmalogin via systemd drop-in.
+`plasmalogin` uses Qt Quick for its login UI. On VM GPUs without hardware
+acceleration, Qt Quick crashes trying to initialize OpenGL. Added
+`QT_QUICK_BACKEND=software` and `KWIN_COMPOSE=Q` environment to plasmalogin
+via systemd drop-in.
 
 #### 8. Flathub auto-config (FIXED 2026-06-29)
-Discover showed "No Flatpak sources" on a fresh bootc deployment because Flathub
-was only configured by the ISO installer. Fixed by shipping
-`/etc/flatpak/remotes.d/flathub.flatpakrepo` directly in the OCI image.
+Discover showed "No Flatpak sources" on a fresh bootc deployment. Fixed by
+shipping `/etc/flatpak/remotes.d/flathub.flatpakrepo` directly in the OCI image.
 
 #### 9. bootc deployment: "Tree contains both /etc and /usr/etc" (FIXED 2026-07-01)
 **Root cause**: The OCI images were layered on top of
@@ -78,37 +70,58 @@ was only configured by the ISO installer. Fixed by shipping
 tried to extract all the parent's OCI layers and merge them with the `/layer`
 content into a single rootfs. This approach was fundamentally broken because:
 1. Python's `tarfile` module cannot correctly process OCI whiteout entries
-   (`.wh.*` markers that remove files from lower layers)
 2. `shutil.rmtree` and `robust_merge` had edge cases with symlinks and overlayfs
 3. The freedesktop-sdk platform's `/usr/etc` config leaked into `/etc`
 
 **Fix**: Adopted `projectbluefin/dakota`'s self-contained OCI architecture:
-- Removed the parent OCI dependency entirely — the compose layer is the
-  complete rootfs with no layering
+- Removed the parent OCI dependency entirely — the compose layer is the complete rootfs
 - Replaced the 140-line Python merge script with Dakota's 5-line shell:
   `cp -a /layer/usr/etc/. /layer/etc/ && rm -rf /layer/usr/etc`
 - `build-oci` now uses `/layer` directly with no `parent:` field
-- Export uses Dakota's `podman pull oci:` + `podman build --squash-all`
-  + `podman push` pipeline
+- Export uses Dakota's `podman pull oci:` + `podman build --squash-all` + `podman push`
 
-Result: `bootc switch ghcr.io/whelanh/tromso-kde-min:latest` deploys without
-the `/etc`/`usr/etc` conflict. The image is 3.3 GB (down from 3.7 GB —
-freedesktop-sdk platform whiteout bloat eliminated).
+Result: `bootc switch` deploys without the `/etc`/`usr/etc` conflict. Image is 3.3 GB
+(down from 3.7 GB — freedesktop-sdk platform whiteout bloat eliminated).
+
+#### 10. bootc first boot: systemd services fail (FIXED 2026-07-01)
+**Root cause**: On bootc systems, `/etc` is the **host's persistent** partition, not
+the deployed image's `/etc`. The deployed image's users (messagebus, polkitd, etc.)
+are in `/usr/etc/passwd` but not in the host's runtime `/etc/passwd`.
+
+Three interacting bugs prevented the system from self-healing:
+1. `systemd-sysusers.service` has `ConditionNeedsUpdate=|/etc` — skipped on bootc
+   because `/etc` hasn't "changed" since the last boot
+2. `systemd-sysusers` fails at boot even when forced because freedesktop-sdk's
+   `basic.conf` tries to create groups (`adm`, `tty`) that already exist on the
+   host, returning exit code 1
+3. `systemd-sysusers` reads `/usr/etc/passwd` to check if users exist, and skips
+   creating users already found there — but the runtime only reads `/etc/passwd`
+4. `/etc` is read-only during early boot (btrfs subvolume, remount happens later)
+5. `/var/home` directory doesn't exist on the host's persistent `/var`
+
+**Fix**: Created `aurora-sysusers.service` (in `system-config.bst`) that:
+- Runs at early boot (before `dbus.service`)
+- Remounts `/etc` read-write via `ExecStartPre=-/bin/mount -o remount,rw /etc`
+- Directly syncs missing users from `/usr/etc/passwd` to the host's `/etc/passwd`
+- Added `aurora-files.conf` tmpfiles.d entry to create `/var/home` and `/var/roothome`
+- Added `/etc/default/useradd` to automatically add new users to video/render/input groups
+- Stripped conflicting `g adm` line from freedesktop-sdk's `basic.conf` during build
+
+Result: Core system services (D-Bus, polkit, resolved, timesyncd, rtkit, avahi) all start
+correctly on first boot after `bootc switch`.
 
 ### Known Issues
 
-#### Boot failure after deployment (investigating)
-The image deploys via `bootc switch` but does not reach the login screen after
-`systemctl reboot`. Systemd services fail during boot. This also affects
-`projectbluefin/dakota` on this VM, suggesting a VM/configuration issue
-rather than an image-specific bug.
+#### 1. Network services (minor)
+Some networking-related services may fail on first boot (NetworkManager-wait-online).
+These are non-critical for the desktop experience.
+
+#### 2. KVM/VM GPU requirements
+The image requires `virtio` GPU with 3D acceleration enabled in QEMU/VirtManager.
+QXL and VGA do not provide the DRM render nodes needed by KWin/Wayland. This also
+affects `projectbluefin/dakota` on the same VM.
 
 ## TODO
-
-### Boot troubleshooting
-Investigate the boot failure — compare service states with a working Dakota
-deployment, check serial console output, review systemd journal for
-failed services and ordering cycles.
 
 ### SELinux Integration
 The image currently runs without mandatory access control. freedesktop-sdk
@@ -116,6 +129,13 @@ already ships `libselinux` and the kernel has SELinux built in. What's missing:
 1. **SELinux policy packages** — add to the build stack (reference: gnome-build-meta)
 2. **Filesystem labeling** — run `setfiles` to label the filesystem
 3. **Kernel args** — add `selinux=1 security=selinux` to the bootc kargs
+
+### Network Manager auto-connect
+Investigate NetworkManager service failures and ensure automatic network connectivity.
+
+### New user creation on first boot
+Test `useradd` flow on a fresh bootc deployment to verify the `/etc/default/useradd`
+groups and home directory defaults work correctly.
 
 ## Tracking Strategy
 
@@ -138,7 +158,10 @@ attempted but abandoned due to BST junction tracking limitations.
 | `elements/oci/tromso.bst` | Full rewrite: self-contained, no parent OCI, Dakota 5-line /usr/etc merge | 2026-07-01 |
 | `Justfile` | Dakota export pipeline: podman pull + squash-all + podman push | 2026-07-01 |
 | `Justfile` | Added `podman-push` recipe, updated `export-kde`/`push-kde` | 2026-07-01 |
-| `AGENTS.md` | Documented self-contained OCI architecture, Dakota push pattern | 2026-07-01 |
+| `elements/oci/kde-minimal.bst` | Strip `g adm` from freedesktop-sdk basic.conf (prevents sysusers conflict) | 2026-07-01 |
+| `elements/tromso/system-config.bst` | `aurora-sysusers.service`: sync users at early boot on bootc hosts | 2026-07-01 |
+| `elements/tromso/system-config.bst` | `aurora-files.conf` tmpfiles.d: create /var/home, /var/roothome | 2026-07-01 |
+| `elements/tromso/system-config.bst` | `/etc/default/useradd`: video,render,input groups + /var/home prefix | 2026-07-01 |
 
 ### kde-build-meta-x Changes
 

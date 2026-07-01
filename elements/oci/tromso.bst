@@ -38,6 +38,17 @@ config:
     - |
       systemd-sysusers --root /layer
 
+    # freedesktop-sdk's basic.conf defines system groups including `adm` (GID 4).
+    # On bootc hosts, the persistent /etc/group already has `adm` from the
+    # previous deployment. systemd-sysusers at boot exits with status 1 when
+    # it tries to create an existing group, preventing subsequent user creation
+    # (messagebus, polkitd, etc.). Strip the conflicting line so sysusers at
+    # boot processes cleanly through to our aurora-system.conf entries.
+    - |
+      if [ -f /layer/usr/lib/sysusers.d/basic.conf ]; then
+        sed -i '/^[[:space:]]*g adm /d' /layer/usr/lib/sysusers.d/basic.conf
+      fi
+
     - |
       if [ -d /layer/usr/share/glib-2.0/schemas ]; then
         glib-compile-schemas /layer/usr/share/glib-2.0/schemas || true

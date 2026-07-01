@@ -288,3 +288,95 @@ Get a token at https://github.com/settings/tokens with `repo` and `write:package
 
 The squashfs embeds the tromso OCI image as VFS containers-storage.  The skopeo import into VFS **must run from inside the installer container** (not the build host) so the tar-split metadata is written in the format the live ISO can read.  See dakota-iso's justfile comment for details.
 
+---
+
+## Bootc First-Boot User Management
+
+bootc switches deployments, but the host's **persistent partitions** (`/etc`, `/var`) are
+carried forward from the previous deployment. This creates several issues that must be
+handled explicitly in the image build.
+
+### The Problem
+
+After `bootc switch`, the deployed image's config files are in `/usr/etc/` (e.g.,
+`/usr/etc/passwd` with system users like `messagebus`, `polkitd`). But the **runtime**
+`/etc/` is the host's persistent partition from the previous deployment, which does
+NOT have these users. Services that look up users via `/etc/passwd` (D-Bus, polkit,
+resolved, etc.) fail because their users don't exist in the runtime database.
+
+### Why systemd-sysusers Doesn't Help
+
+`systemd-sysusers.service` would normally create missing users at boot, but:
+
+1. **ConditionNeedsUpdate**: The service has `ConditionNeedsUpdate=|/etc` — on bootc,
+   the persistent `/etc` partition never appears "updated," so sysusers is always skipped.
+2. **ConditionCredential**: Also `ConditionCredential=|sysusers.extra` — requires a
+   systemd credential that never exists on bootc hosts.
+3. **Group conflicts**: freedesktop-sdk's `basic.conf` defines standard groups
+   (`adm`, `tty`) that already exist on the host's `/etc/group`. When sysusers
+   DOES run (e.g., via a custom service), it exits with code 1 on the first conflict,
+   preventing subsequent user creation.
+4. **User exist-check bypass**: sysusers reads from `/usr/etc/passwd` (among other
+   databases) and skips users already found there — even though the runtime only
+   reads `/etc/passwd` where they're missing.
+
+### The Fix: `aurora-sysusers.service`
+
+Located in `elements/tromso/system-config.bst`, this custom oneshot service:
+
+```ini
+[Unit]
+Description=Aurora System User Sync
+DefaultDependencies=no
+After=systemd-remount-fs.service
+Before=dbus.service dbus.socket
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/bin/mount -o remount,rw /etc
+ExecStart=/bin/sh -c 'while IFS=: read u _; do grep -q "^$u:" /etc/passwd || \
+  grep "^$u:" /usr/etc/passwd >> /etc/passwd; done < /usr/etc/passwd; \
+  ... (same for /etc/shadow and /etc/group)'
+
+[Install]
+WantedBy=sysinit.target
+```
+
+Key design decisions:
+- **Runs before D-Bus** (`Before=dbus.service dbus.socket`) — users must exist before
+  any service that depends on them
+- **Remounts `/etc` rw** (`ExecStartPre=-/bin/mount -o remount,rw /etc`) — on bootc,
+  `/etc` is a separate btrfs subvolume that may be read-only during early boot
+- **Direct file sync** — reads `/usr/etc/passwd` (deployed image) and appends missing
+  entries to the host's `/etc/passwd` — no sysusers overhead, no condition checks,
+  no group conflicts
+
+### Additional Boot-Time Fixes
+
+**`basic.conf` adm line removal** (`kde-minimal.bst`, `tromso.bst`):
+```bash
+if [ -f /layer/usr/lib/sysusers.d/basic.conf ]; then
+  sed -i '/^[[:space:]]*g adm /d' /layer/usr/lib/sysusers.d/basic.conf
+fi
+```
+Prevents `systemd-sysusers --root /layer` from failing during the build if `adm` already
+exists in the sandbox. (Still harmless at boot now that we bypass sysusers entirely.)
+
+**tmpfiles.d for `/var/home`** (`system-config.bst`):
+```
+d /var/home 0755 root root -
+d /var/roothome 0700 root root -
+```
+On bootc, `/var` is persistent across deployments. If the host's `/var` has no
+`/var/home`, user sessions with `$HOME=/var/home/$USER` will fail.
+
+**useradd defaults** (`system-config.bst`):
+```
+GROUPS=video,render,input
+HOME=/var/home
+SHELL=/bin/bash
+```
+New users automatically get GPU/input groups required for Wayland and KWin.
+
+
