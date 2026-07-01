@@ -43,6 +43,29 @@ bst *ARGS:
         "{{bst2_image}}" \
         bash -c 'if [ -t 1 ]; then bst --colors "$@"; else bst --no-colors "$@"; fi' -- ${BST_FLAGS:-} {{ARGS}}
 
+# Push an OCI layout to a registry using podman — the Dakota pattern.
+# squash-all produces a single clean layer that bootc reliably deploys.
+[group('dev')]
+podman-push source_dir dest_registry token="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    T="${3:-${GHCR_TOKEN:-$(cat ~/chessFiles/ghcr_token.txt 2>/dev/null || true)}}"
+    if [ -z "$T" ]; then
+        echo "ERROR: No GHCR token found." >&2
+        exit 1
+    fi
+    echo "==> Loading OCI image into podman..."
+    IMAGE_ID=$(sudo podman pull -q "oci:{{source_dir}}")
+    echo "==> Squashing to single layer (Dakota pattern)..."
+    printf 'FROM %s\n' "$IMAGE_ID" | sudo podman build --pull=never \
+        --security-opt label=type:unconfined_t --squash-all \
+        -t tromso-push:latest -f - .
+    sudo podman rmi "$IMAGE_ID" || true
+    echo "==> Pushing to {{dest_registry}}..."
+    sudo podman push --creds="whelanh:${T}" tromso-push:latest "docker://{{dest_registry}}"
+    sudo podman rmi tromso-push:latest || true
+    echo "==> Push complete."
+
 # ── BuildStream via systemd-nspawn (experimental) ──────────────────────
 # Run bst2 in systemd-nspawn container instead of podman (less restrictive networking)
 # Usage: just bst-nspawn build oci/tromso.bst
@@ -224,8 +247,8 @@ export-kde:
     echo "==> Exporting KDE Minimal OCI image..."
     rm -rf .build-out-kde
     just bst artifact checkout oci/kde-minimal.bst --directory /src/.build-out-kde
-    echo "==> Pushing with skopeo copy (avoids buildah manifest bug)..."
-    skopeo copy oci:.build-out-kde "docker://ghcr.io/whelanh/tromso-kde-min:latest" --dest-creds=whelanh:"$TOKEN"
+    chmod -R a+rX .build-out-kde
+    just podman-push .build-out-kde ghcr.io/whelanh/tromso-kde-min:latest
     rm -rf .build-out-kde
     echo "==> Export complete: pushed to ghcr.io/whelanh/tromso-kde-min:latest"
     echo ""
@@ -248,8 +271,10 @@ push-kde registry="ghcr.io/whelanh/tromso-kde-min":
     export-dir=".build-out-push-$$"
     rm -rf "$export-dir"
     just bst artifact checkout oci/kde-minimal.bst --directory "/src/$export-dir"
+    chmod -R a+rX "$export-dir"
     if [ -d "$export-dir" ]; then
-        skopeo copy "oci:${export-dir}" "docker://{{registry}}:latest" --dest-creds=whelanh:"$TOKEN"
+        chmod -R a+rX "$export-dir"
+        just podman-push "$export-dir" "{{registry}}:latest"
         rm -rf "$export-dir"
         echo "==> Push complete."
     else
