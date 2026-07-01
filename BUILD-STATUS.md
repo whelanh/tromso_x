@@ -18,7 +18,6 @@ Last updated: 2026-06-30
 - **Network, System Settings, Konsole** functional
 - **CA certificates** work for TLS connections
 - **Local `just` recipes** for both Aurora and minimal KDE images
-- **OCI image** builds and boots correctly via bootc
 
 ### Fixed Issues
 
@@ -90,22 +89,13 @@ recipes).
 
 ### Known Issues
 
-#### 1. Unprivileged User Namespaces (UNRESOLVED)
-Flatpak `run` shows "CanCreateUserNamespace() clone() failure: EPERM". This
-means unprivileged user namespaces are restricted on this kernel. Flatpak apps
-can be installed but may fail at runtime. May need `kernel.unprivileged_userns_clone=1`.
-
-#### 2. Fusermount3 Warnings
-`Could not unmount revokefs-fuse` warnings appear during flatpak install but
-do not prevent successful installation. The warning is cosmetic.
-
-#### 3. Flathub not auto-configured in OCI (FIXED 2026-06-29)
+#### 1. Flathub not auto-configured in OCI (FIXED 2026-06-29)
 Discover showed "No Flatpak sources" on a fresh bootc deployment because Flathub
 was only configured by the ISO installer (`install-flatpaks.sh`), not in the
 base OCI image. Fixed by shipping `/etc/flatpak/remotes.d/flathub.flatpakrepo`
 directly in the image.
 
-#### 5. bootc deployment: "Tree contains both /etc and /usr/etc" (FIXED 2026-06-29)
+#### 2 bootc deployment: "Tree contains both /etc and /usr/etc" (FIXED 2026-06-29)
 **Root cause (corrected)**: `oci/kde-linux/image.bst` used multi-layer OCI with
 `platform/image.bst` as parent (which has `/usr/etc`, OSTree convention) and
 `filesystem.bst` as the added layer (which has `/etc`). Normalization only
