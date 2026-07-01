@@ -141,7 +141,6 @@ config:
   - |
     install -Dm644 /dev/stdin "%{install-root}/etc/default/useradd" <<'EOF'
     GROUPS=video,render,input
-    HOME=/var/home
     SHELL=/bin/bash
     EOF
 
