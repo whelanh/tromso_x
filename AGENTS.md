@@ -216,40 +216,73 @@ For the ISO installer path (composefs enabled), gzip compression IS required:
   `skopeo copy --dest-compress-format gzip --dest-force-compress-format`
 - Uncompressed layers cause bootc's composefs splitstream to deadlock
 
-### Pushing to Registries
+### OCI Architecture — Dakota Self-Contained Pattern
 
-**NEVER use `podman push`.** Buildah 1.44.0 (podman 6.x) has a bug where both `podman push` and `podman build --squash-all` duplicate the config blob as an `application/octet-stream` layer in the manifest. When bootc pulls this broken image, it tries to extract the 1232-byte config JSON as a rootfs layer, corrupting the deployment and causing cascading systemd service failures.
+The OCI images MUST be **self-contained** (no parent OCI, no multi-layer merging):
 
-**NEVER use `podman build --squash-all`.** Same buildah 1.44 bug — the squashed image in containers-storage will have the config blob duplicated as a layer, which gets faithfully transferred by skopeo copy.
-
-**Use `skopeo copy` for both import and push:**
-- **Import** from OCI layout: `skopeo copy oci:.build-out containers-storage:localhost/tromso-kde:latest`
-- **Push** to registry: `skopeo copy containers-storage:localhost/tromso-kde:latest docker://ghcr.io/... --dest-creds=...`
-
-The `skopeo copy oci:...` import bypasses buildah entirely (no `podman pull`, no `podman build`), so the manifest stays clean. Use `podman save | sudo podman load` only for rootless→rootful copy (that path doesn't rewrite manifests).
-
-**Always use `skopeo copy` with `--dest-creds`** (run as normal user, not sudo):
-
-```bash
-skopeo copy \
-  containers-storage:localhost/tromso-kde:latest \
-  docker://ghcr.io/whelanh/tromso-kde-min:latest \
-  --dest-creds=whelanh:"$(cat ~/chessFiles/ghcr_token.txt)"
+```yaml
+# build-oci config — note: NO parent field
+build-oci <<EOF
+  mode: oci
+  gzip: disabled
+  images:
+  - os: linux
+    architecture: "%{go-arch}"
+    layer: /layer
+    labels:
+      'containers.bootc': '1'
+EOF
 ```
 
-**Why `--dest-creds` instead of stored auth:**
-- `sudo skopeo login` requires an interactive terminal (can't be scripted)
-- The GHCR token only has `repo, write:packages` scopes (no `read:packages`), which is fine for `--dest-creds` but some skopeo auth store paths may fail on blob-reuse checks
-- `skopeo login` stores credentials to `~/.docker/config.json` (rootless) which works, but the `--dest-creds` approach is simpler and more reliable
+Key rules:
+- **No parent OCI** — the compose layer alone provides the complete rootfs. Dakota builds
+  everything from source into a single stack; we do the same.
+- **/usr/etc merge** — Dakota's 5-line shell pattern (NOT a Python OCI extractor):
+  ```bash
+  if [ -d /layer/usr/etc ]; then
+    mkdir -p /layer/etc
+    cp -a /layer/usr/etc/. /layer/etc/
+    rm -rf /layer/usr/etc
+  fi
+  ```
+- **Never extract parent OCI layers in Python** to merge rootfses. This approach was
+  attempted and failed — it cannot correctly handle OCI whiteout entries, hardlinks,
+  and filesystem layering semantics.
+- **`gzip: disabled`** — Dakota convention for non-composefs images (avoids double-compression).
 
-The `just push-kde` and `just push` recipes in the Justfile use this approach. Run them as:
+### Pushing to Registries
+
+Use the **Dakota export pattern**: `podman pull oci:` + `podman build --squash-all` + `podman push`.
+This is what `just export-kde` / `just push-kde` do via the `podman-push` recipe.
+
+```bash
+# The full pipeline (automated by just export-kde / just push-kde):
+# 1. Checkout BuildStream artifact
+just bst artifact checkout oci/kde-minimal.bst --directory /src/.build-out-kde
+
+# 2. Load into rootful podman
+sudo podman pull -q oci:.build-out-kde
+
+# 3. Squash to single layer (Dakota pattern — required for bootc compatibility)
+printf 'FROM %s\n' "$IMAGE_ID" | sudo podman build --pull=never \
+    --squash-all -t tromso-push:latest -f - .
+
+# 4. Push
+sudo podman push --creds="whelanh:${TOKEN}" tromso-push:latest \
+    docker://ghcr.io/whelanh/tromso-kde-min:latest
+```
+
+The `podman build --squash-all` step is critical — it converts BuildStream's OCI output
+into a single clean layer that bootc reliably deploys. Dakota uses this exact pattern.
+
 ```bash
 just push-kde ghcr.io/whelanh/tromso-kde-min
 # or for the full Aurora image:
 just push ghcr.io/whelanh/tromso
 ```
 
-The token is read from `~/chessFiles/ghcr_token.txt` or the `GHCR_TOKEN` env var. Get a token at https://github.com/settings/tokens with `repo` and `write:packages` scopes.
+The token is read from `~/chessFiles/ghcr_token.txt` or the `GHCR_TOKEN` env var.
+Get a token at https://github.com/settings/tokens with `repo` and `write:packages` scopes.
 
 ### VFS Containers-Storage in Squashfs
 

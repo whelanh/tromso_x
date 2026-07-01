@@ -1,6 +1,6 @@
 # Build Status & Next Steps
 
-Last updated: 2026-06-30
+Last updated: 2026-07-01
 
 ## Current State
 
@@ -8,16 +8,17 @@ Last updated: 2026-06-30
 - **Two build targets**: `oci/tromso.bst` (Aurora overlay) and `oci/kde-minimal.bst` (pure KDE)
   - `just build` / `just build-kde` — full build + export
   - `just generate-bootable-image` / `just generate-bootable-kde` — VM disk image
-- **KDE Plasma 6.7.80 desktop** loads with fonts and wallpaper
+- **KDE Plasma 6.7.90 desktop** loads with fonts and wallpaper
 - **plasma-login-manager** login screen works — SDDM fully replaced
-- **Application launcher (kickoff/kicker)** shows all installed apps (FIXED 2026-06-24)
-- **KRunner** finds installed apps and newly-installed Flatpaks (FIXED 2026-06-24)
+- **Application launcher (kickoff/kicker)** shows all installed apps
+- **KRunner** finds installed apps and newly-installed Flatpaks
 - **Discover "Installed" tab** shows Flatpaks
-- **Panel icons** display correctly — no blank/white icons (FIXED 2026-06-24)
-- **Non-root users can install Flatpak apps** via Discover or CLI (FIXED 2026-06-24)
+- **Panel icons** display correctly — no blank/white icons
+- **Non-root users can install Flatpak apps** via Discover or CLI
 - **Network, System Settings, Konsole** functional
 - **CA certificates** work for TLS connections
 - **Local `just` recipes** for both Aurora and minimal KDE images
+- **bootc switch deploys successfully** — `ghcr.io/whelanh/tromso-kde-min:latest` (FIXED 2026-07-01)
 
 ### Fixed Issues
 
@@ -43,20 +44,12 @@ causing the launcher, KRunner, and Discover's "Installed" tab to show nothing.
 `KDEDIRS=/usr` and `KDE_FULL_SESSION=true` were also missing — these are present
 on every working KDE host and tell KDE it's in a full desktop session.
 
-**Why it was hard to find**: The sycoca cache was correct and `kbuildsycoca6 --menutest`
-showed all apps because it reads the menu file directly from the filesystem. But
-plasmashell/kickoff/krunner use the XDG config search path to find the menu file,
-and `/etc/xdg` wasn't in that path. The host comparison revealed the discrepancy.
-
-**Also fixed**: `KDEDIRS=/usr` and `KDE_FULL_SESSION=true` added to match
-working KDE hosts.
-
 #### 5. Flatpak User Install (FIXED 2026-06-24)
 Two issues prevented non-root users from installing Flatpaks:
 1. **Polkit**: the default flatpak polkit rule only covers `app-install`,
    `runtime-install`, etc. — not internal operations `Deploy` and `GetRevokefsFd`.
    Added `99-flatpak-wheel.rules` allowing all `org.freedesktop.Flatpak.*` actions
-   for active wheel-group members (dropping `subject.local` which is unreliable on bootc).
+   for active wheel-group members.
 2. **fusermount3**: the compose step strips setuid bits. Added `chmod u+s`
    on fusermount3 so non-root users can mount/unmount FUSE filesystems during
    flatpak installation.
@@ -67,93 +60,85 @@ Changed to `ON`; the X11 headers were already in build-depends, so this added no
 new runtime dependencies. The plasmoids are compiled as `.so` plugins at
 `/usr/lib/plugins/plasma/applets/`.
 
-#### 7. Single-squash-layer export + `gzip: disabled` (FIXED 2026-06-29)
-Following Dakota's pattern: export now uses `--squash-all` in `podman build` to
-produce a single-layer final image. Build-OCI configs changed from `gzip: gzip`
-to `gzip: disabled` (avoiding double-compression). This fixed the bootc
-"Tree contains both /etc and /usr/etc" error on `bootc switch`.
-
-#### 8. plasmalogin QML greeter crash in VMs (FIXED 2026-06-29)
+#### 7. plasmalogin QML greeter crash in VMs (FIXED 2026-06-29)
 `plasmalogin` uses Qt Quick for its login UI. On VM GPUs (virtio-gpu/QXL)
 without hardware acceleration, Qt Quick crashes trying to initialize OpenGL.
 Added `QT_QUICK_BACKEND=software` and `KWIN_COMPOSE=Q` environment to
-plasmalogin via systemd drop-in in `kde-minimal.bst`.
+plasmalogin via systemd drop-in.
 
-#### 9. podman push config-blob-as-layer bug (WORKAROUND 2026-06-29)
-Buildah 1.44.0 (podman 6.x) has a bug: `podman push` duplicates the image
-config blob as an `application/octet-stream` layer in the manifest. When bootc
-pulls the pushed image, it tries to extract the 1232-byte JSON config as a
-rootfs layer, corrupting the deployment and causing cascading systemd service
-failures. **Fix**: Use `skopeo copy` instead (or `just push-kde`/`just push`
-recipes).
+#### 8. Flathub auto-config (FIXED 2026-06-29)
+Discover showed "No Flatpak sources" on a fresh bootc deployment because Flathub
+was only configured by the ISO installer. Fixed by shipping
+`/etc/flatpak/remotes.d/flathub.flatpakrepo` directly in the OCI image.
+
+#### 9. bootc deployment: "Tree contains both /etc and /usr/etc" (FIXED 2026-07-01)
+**Root cause**: The OCI images were layered on top of
+`oci/kde-linux/image.bst` as a parent OCI, which used a multi-layer composition
+(freedesktop-sdk platform + KDE Linux filesystem). A 140-line Python script
+tried to extract all the parent's OCI layers and merge them with the `/layer`
+content into a single rootfs. This approach was fundamentally broken because:
+1. Python's `tarfile` module cannot correctly process OCI whiteout entries
+   (`.wh.*` markers that remove files from lower layers)
+2. `shutil.rmtree` and `robust_merge` had edge cases with symlinks and overlayfs
+3. The freedesktop-sdk platform's `/usr/etc` config leaked into `/etc`
+
+**Fix**: Adopted `projectbluefin/dakota`'s self-contained OCI architecture:
+- Removed the parent OCI dependency entirely — the compose layer is the
+  complete rootfs with no layering
+- Replaced the 140-line Python merge script with Dakota's 5-line shell:
+  `cp -a /layer/usr/etc/. /layer/etc/ && rm -rf /layer/usr/etc`
+- `build-oci` now uses `/layer` directly with no `parent:` field
+- Export uses Dakota's `podman pull oci:` + `podman build --squash-all`
+  + `podman push` pipeline
+
+Result: `bootc switch ghcr.io/whelanh/tromso-kde-min:latest` deploys without
+the `/etc`/`usr/etc` conflict. The image is 3.3 GB (down from 3.7 GB —
+freedesktop-sdk platform whiteout bloat eliminated).
 
 ### Known Issues
 
-#### 1. Flathub not auto-configured in OCI (FIXED 2026-06-29)
-Discover showed "No Flatpak sources" on a fresh bootc deployment because Flathub
-was only configured by the ISO installer (`install-flatpaks.sh`), not in the
-base OCI image. Fixed by shipping `/etc/flatpak/remotes.d/flathub.flatpakrepo`
-directly in the image.
-
-#### 2 bootc deployment: "Tree contains both /etc and /usr/etc" (FIXED 2026-06-29)
-**Root cause (corrected)**: `oci/kde-linux/image.bst` used multi-layer OCI with
-`platform/image.bst` as parent (which has `/usr/etc`, OSTree convention) and
-`filesystem.bst` as the added layer (which has `/etc`). Normalization only
-touched the added layer, not the parent's lower layer. Extracting the parent's
-*last* layer to check for `/usr/etc` missed content from *earlier* layers.
-
-**Fix**: All OCI image builders (`image.bst`, `tromso.bst`, `kde-minimal.bst`)
-now produce **single-layer** OCI images (Dakota's approach). The parent OCI's
-rootfs is extracted from ALL layers, merged with the `/layer` content, then
-normalized to `/etc` before `build-oci` creates a single-layer image with no
-parent. This guarantees no `/usr/etc` exists anywhere in the final image.
+#### Boot failure after deployment (investigating)
+The image deploys via `bootc switch` but does not reach the login screen after
+`systemctl reboot`. Systemd services fail during boot. This also affects
+`projectbluefin/dakota` on this VM, suggesting a VM/configuration issue
+rather than an image-specific bug.
 
 ## TODO
+
+### Boot troubleshooting
+Investigate the boot failure — compare service states with a working Dakota
+deployment, check serial console output, review systemd journal for
+failed services and ordering cycles.
 
 ### SELinux Integration
 The image currently runs without mandatory access control. freedesktop-sdk
 already ships `libselinux` and the kernel has SELinux built in. What's missing:
-
-1. **SELinux policy packages** — add to the build stack (reference: gnome-build-meta
-   already integrates SELinux)
-2. **Filesystem labeling** — run `setfiles` to label the filesystem with the
-   loaded policy in the OCI build script (after layer assembly, before `build-oci`)
+1. **SELinux policy packages** — add to the build stack (reference: gnome-build-meta)
+2. **Filesystem labeling** — run `setfiles` to label the filesystem
 3. **Kernel args** — add `selinux=1 security=selinux` to the bootc kargs
-   (currently in `oci/tromso-ostree.bst` and the `generate-bootable-image` recipe)
-
-The gnome-build-meta project provides the reference pattern for how to wire
-SELinux into a freedesktop-sdk-based build.
 
 ## Tracking Strategy
 
-All KDE elements track `master` (git HEAD). Using `refs/tags/v6.*.?` to pin
-to stable releases was attempted but abandoned because:
-- BST tracking across junctions requires `project.refs` (not configured)
-- The pattern `v6.*.?` excludes pre-release tags (`.90`, `-rc`) but tracking
-  from within kde-build-meta-x failed due to container image issues
-- Pinning plasma-desktop/plasma-workspace to `v6.7.1` caused API skew with
-  master-tracked deps (link-time Xcursor dependency failures)
-- Tracking from tromso_x is blocked by junction boundaries
-- The `scripts/track-refs-local.sh` script uses a BST session limit of 50
+All KDE elements track `master` (git HEAD). See the tracking notes in
+`kde-build-meta-x`. Using `refs/tags/v6.*.?` to pin to stable releases was
+attempted but abandoned due to BST junction tracking limitations.
 
 ## Key Build Changes
 
 | File | Change | Date |
 |------|--------|------|
 | `elements/oci/tromso.bst` | Parent-aware /etc normalization, sudo setuid, fusermount3 setuid | 2026-06-23/24 |
-| `elements/tromso/system-config.bst` | /etc/xdg in XDG_CONFIG_DIRS, KDEDIRS, KDE_FULL_SESSION, homed masks, flatpak polkit rule, LANG env | 2026-06-23/24 |
+| `elements/tromso/system-config.bst` | /etc/xdg in XDG_CONFIG_DIRS, KDEDIRS, homed masks, flatpak polkit rule | 2026-06-23/24 |
 | `elements/oci/kde-minimal.bst` | New minimal KDE-only build target | 2026-06-24 |
 | `elements/tromso/deps-minimal.bst` | Minimal deps for kde-minimal | 2026-06-24 |
-| `.github/workflows/update-refs.yml` | Updated tracking description | 2026-06-23 |
 | `Justfile` | Added build-kde, export-kde, generate-bootable-kde recipes | 2026-06-24 |
-| `Justfile` | SUDO_CMD uses podman check (enables rootless), rootless→rootful image copy, policy.json mount, HOME=/root for bootc | 2026-06-28 |
-| `elements/oci/kde-linux/image.bst` | Single-layer OCI (Dakota approach): extract all parent layers, merge, normalize to /etc | 2026-06-29 |
-| `elements/oci/tromso.bst` | Single-layer OCI + Flathub repo config | 2026-06-29 |
-| `elements/oci/kde-minimal.bst` | Single-layer OCI + Flathub repo config | 2026-06-29 |
-| `Justfile`, `kde-minimal.bst`, `tromso.bst` | `--squash-all` export + `gzip:disabled` (Dakota pattern) | 2026-06-29 |
-| `Justfile` | Added `push-kde`/`push` recipes using `skopeo copy` (buildah push bug workaround) | 2026-06-29 |
-| `AGENTS.md` | Documented podman push buildah bug, skopeo workaround, gzip:disabled convention | 2026-06-29 |
-| `kde-minimal.bst` | plasmalogin `QT_QUICK_BACKEND=software` drop-in for VM rendering | 2026-06-29 |
+| `Justfile` | Rootless→rootful image copy, policy.json mount, HOME=/root for bootc | 2026-06-28 |
+| `elements/oci/kde-linux/image.bst` | Removed Python platform /usr/etc merge script (bugfix) | 2026-07-01 |
+| `elements/oci/kde-minimal.bst` | Full rewrite: self-contained, no parent OCI, Dakota 5-line /usr/etc merge | 2026-07-01 |
+| `elements/oci/tromso.bst` | Full rewrite: self-contained, no parent OCI, Dakota 5-line /usr/etc merge | 2026-07-01 |
+| `Justfile` | Dakota export pipeline: podman pull + squash-all + podman push | 2026-07-01 |
+| `Justfile` | Added `podman-push` recipe, updated `export-kde`/`push-kde` | 2026-07-01 |
+| `AGENTS.md` | Documented self-contained OCI architecture, Dakota push pattern | 2026-07-01 |
 
 ### kde-build-meta-x Changes
 
@@ -166,27 +151,15 @@ to stable releases was attempted but abandoned because:
 ## Build & Test Commands
 
 ```bash
+# Minimal KDE build (recommended for testing)
+just build-kde
+
 # Aurora (full) build
 just build
-just generate-bootable-image && just boot-vm
 
-# Minimal KDE build
-just build-kde
-just generate-bootable-kde
-just boot-vm
-
-# SSH access
-ssh -p 2222 root@127.0.0.1      # root (password: aurora)
-ssh -p 2222 aurora@127.0.0.1    # user (password: aurora)
-
-# Create user
-useradd -m -G video,render,input,audio,wheel,flatpak -s /bin/zsh aurora
-echo 'aurora:aurora' | chpasswd
-
-# Push to registry (use skopeo, NOT podman push — buildah bug)
-# First-time auth (skopeo auth is separate from podman):
-cat ~/chessFiles/ghcr_token.txt | sudo skopeo login ghcr.io -u whelanh --password-stdin
-
-# Then push:
+# Push to registry
 just push-kde ghcr.io/whelanh/tromso-kde-min
+
+# Test on a bootc-enabled VM
+sudo bootc switch ghcr.io/whelanh/tromso-kde-min:latest
 ```

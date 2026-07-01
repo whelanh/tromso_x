@@ -12,9 +12,9 @@ Tromso_x's companion repo is [whelanh/kde-build-meta-x](https://github.com/whela
 
 The workflow is done locally on your own machine and is described in [MANUAL_UPDATES.md](MANUAL-UPDATES.md).
 
-**Status: 2026-06-29: Builds successfully and boots to a working KDE Plasma 6.7.90 Wayland desktop
-with functional application launcher, KRunner, Discover (Flatpak only), and Flatpak support.
-Non-root users can install and run Flatpak apps. See [BUILD-STATUS.md](BUILD-STATUS.md) for details.**
+**Status: 2026-07-01: Builds successfully and deploys via `bootc switch` to a bootable system.
+KDE Plasma 6.7.90 Wayland desktop with functional application launcher, KRunner,
+Discover (Flatpak only), and Flatpak support. See [BUILD-STATUS.md](BUILD-STATUS.md) for details.**
 <img width="3021" height="1767" alt="Screenshot_20260624_080720" src="https://github.com/user-attachments/assets/2abd4132-480c-4ef9-960f-ea6ed33a132a" />
 
 ## Architecture
