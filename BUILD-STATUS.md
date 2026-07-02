@@ -19,6 +19,7 @@ Last updated: 2026-07-01
 - **CA certificates** work for TLS connections
 - **Local `just` recipes** for both Aurora and minimal KDE images
 - **bootc switch deploys and boots successfully** on VirtManager VMs with `virtio` GPU + 3D acceleration
+- **bootc switch deployed and booted successfully on real hardware** — Lenovo ThinkPad (Fedora Kinoite → tromso-kde-min)
 - **Core system services (D-Bus, polkit, resolved, etc.) start correctly** after first bootc switch
 
 ### Fixed Issues
@@ -161,7 +162,7 @@ attempted but abandoned due to BST junction tracking limitations.
 | `elements/oci/kde-minimal.bst` | Strip `g adm` from freedesktop-sdk basic.conf (prevents sysusers conflict) | 2026-07-01 |
 | `elements/tromso/system-config.bst` | `aurora-sysusers.service`: sync users at early boot on bootc hosts | 2026-07-01 |
 | `elements/tromso/system-config.bst` | `aurora-files.conf` tmpfiles.d: create /var/home, /var/roothome | 2026-07-01 |
-| `elements/tromso/system-config.bst` | `/etc/default/useradd`: video,render,input groups + /var/home prefix | 2026-07-01 |
+| `elements/tromso/system-config.bst` | `/etc/default/useradd`: video,render,input groups (no HOME override — uses host convention) | 2026-07-01 |
 
 ### kde-build-meta-x Changes
 

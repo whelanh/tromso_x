@@ -374,9 +374,10 @@ On bootc, `/var` is persistent across deployments. If the host's `/var` has no
 **useradd defaults** (`system-config.bst`):
 ```
 GROUPS=video,render,input
-HOME=/var/home
 SHELL=/bin/bash
 ```
 New users automatically get GPU/input groups required for Wayland and KWin.
+Do NOT set `HOME=/var/home` — Fedora/Kinoite hosts use `/home`, and overriding
+it silently changes existing users' home directories during bootc deployment.
 
 
