@@ -314,8 +314,7 @@ is registered at **https://github.com/settings/keys**.
 ### CI workflow (backup)
 
 If you use the CI workflow as a backup, it needs a fine-grained PAT stored
-as `KBM_PUSH_TOKEN` at
-**https://github.com/whelanh/tromso_x/settings/secrets/actions**:
+as `KBM_PUSH_TOKEN` 
 
 - `Contents: Read and write` on `whelanh/kde-build-meta-x`
 
