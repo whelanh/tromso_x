@@ -218,15 +218,12 @@ export:
     echo "==> Exporting Aurora Tromso OCI image..."
     rm -rf .build-out
     just bst artifact checkout oci/tromso.bst --directory /src/.build-out
-    echo "==> Loading OCI image with skopeo (avoids buildah manifest bug)..."
-    skopeo copy oci:.build-out "containers-storage:localhost/{{image_name}}:{{image_tag}}"
+    chmod -R a+rX .build-out
+    just podman-push .build-out ghcr.io/whelanh/tromso:latest
     rm -rf .build-out
-    echo "==> Export complete: {{image_name}}:{{image_tag}}"
-    # Chunkify optimises the image for ostree/composefs distribution but may
-    # fail if the overlay diff layer contains whiteout char devices (issue #20).
-    # Treat it as non-fatal so GHCR push succeeds even if chunking is skipped.
-    just chunkify "{{image_name}}:{{image_tag}}" || \
-        echo "==> Warning: chunkify failed (see issue #20); image will be pushed unchunked"
+    echo "==> Export complete: pushed to ghcr.io/whelanh/tromso:latest"
+    echo "    For VM bootc switch:"
+    echo "    sudo bootc switch ghcr.io/whelanh/tromso:latest"
 
 # ── Minimal KDE-only build (no Aurora overlay) ─────────────────────────
 [group('build')]
@@ -286,22 +283,26 @@ push-kde registry="ghcr.io/whelanh/tromso-kde-min":
 push registry="ghcr.io/whelanh/tromso":
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "==> Pushing {{image_name}}:{{image_tag}} to {{registry}}..."
-    echo "    Using skopeo copy (avoids buildah's broken podman push)"
-    echo ""
-    echo "    Requires GHCR_TOKEN env var or ~/chessFiles/ghcr_token.txt."
-    echo "    Authenticate at: https://github.com/settings/tokens (scopes: repo, write:packages)"
-    echo ""
     TOKEN="${GHCR_TOKEN:-$(cat ~/chessFiles/ghcr_token.txt 2>/dev/null || true)}"
     if [ -z "$TOKEN" ]; then
         echo "ERROR: No GHCR token found. Set GHCR_TOKEN env var or create ~/chessFiles/ghcr_token.txt." >&2
         exit 1
     fi
-    skopeo copy \
-        containers-storage:localhost/{{image_name}}:{{image_tag}} \
-        docker://{{registry}}:{{image_tag}} \
-        --dest-creds=whelanh:"$TOKEN"
-    echo "==> Push complete."
+    echo "==> Pushing from OCI layout to {{registry}}..."
+    echo "    (Re-checkouts artifact to get clean manifest)"
+    echo ""
+    export-dir=".build-out-push-$$"
+    rm -rf "$export-dir"
+    just bst artifact checkout oci/tromso.bst --directory "/src/$export-dir"
+    chmod -R a+rX "$export-dir"
+    if [ -d "$export-dir" ]; then
+        just podman-push "$export-dir" "{{registry}}:latest"
+        rm -rf "$export-dir"
+        echo "==> Push complete."
+    else
+        echo "ERROR: Could not checkout artifact." >&2
+        exit 1
+    fi
 
 [group('test')]
 generate-bootable-kde $base_dir=base_dir $filesystem=filesystem:
