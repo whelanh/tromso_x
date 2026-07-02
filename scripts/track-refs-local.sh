@@ -81,7 +81,7 @@ NEW_REF=$(sha256sum /tmp/kbm-track.tar.gz | cut -d' ' -f1)
 NEW_BASE=$(tar tzf /tmp/kbm-track.tar.gz | head -1 | sed 's|/$||')
 
 cd "$TROMSO_DIR"
-sed -i "s|url: github:whelanh/kde-build-meta-x/archive/.*|url: github:whelanh/kde-build-meta-x/archive/${FULL_SHA}.tar.gz|" elements/kde-build-meta.bst
+sed -i "s|\(url: github:whelanh/kde-build-meta-x/archive/\).*|\1${FULL_SHA}.tar.gz|" elements/kde-build-meta.bst
 sed -i "s|ref: .*|ref: ${NEW_REF}|" elements/kde-build-meta.bst
 sed -i "s|base-dir: .*|base-dir: ${NEW_BASE}|" elements/kde-build-meta.bst
 
